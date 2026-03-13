@@ -1,0 +1,59 @@
+# ─────────────────────────────────────────
+#  SECUREDMLOPS — params.yaml
+#  Paramètres centralisés du projet
+# ─────────────────────────────────────────
+
+data:
+  raw_path: "data/raw"
+  processed_path: "data/processed"
+  test_size: 0.2
+  val_size: 0.1
+  random_state: 42
+  label_column: "Label"
+  binary_classification: true   # true = BENIGN vs ATTACK
+                                # false = multiclasse (tous les types)
+  cols_to_drop:
+    - "Flow ID"
+    - "Source IP"
+    - "Source Port"
+    - "Destination IP"
+    - "Destination Port"
+    - "Timestamp"
+
+features:
+  variance_threshold: 0.0        # Supprimer features à variance nulle
+  importance_threshold: 0.01     # Seuil de sélection des features (RF)
+
+balancing:
+  strategy: "smote"              # options: smote | undersampling | combined
+
+model:
+  name: "XGBoost_IDS"
+  n_estimators: 500
+  max_depth: 6
+  learning_rate: 0.1
+  subsample: 0.8
+  colsample_bytree: 0.8
+  scale_pos_weight: 5
+  early_stopping_rounds: 50
+  random_state: 42
+
+optuna:
+  n_trials: 50
+  direction: "maximize"          # maximiser le F1-Score
+
+mlflow:
+  tracking_uri: "http://localhost:5000"
+  experiment_name: "IDS_CICIDS2017"
+  model_registry_name: "IDS_XGBoost_Model"
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  model_stage: "Production"     # MLflow Registry stage
+
+thresholds:
+  latency_ms: 100               # Latence max acceptable (ms)
+  false_positive_rate: 0.05     # FPR max acceptable (5%)
+  attack_detection_rate: 0.70   # Recall min sur les attaques
+  drift_threshold: 0.15         # Seuil d'alerte data drift

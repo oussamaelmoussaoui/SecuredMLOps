@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Rapport d'Évaluation — IDS XGBoost</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; }
+        h1, h2 { color: #2c3e50; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th { background: #2c3e50; color: white; padding: 10px; text-align: left; }
+        td { padding: 10px; border-bottom: 1px solid #ddd; }
+        pre { background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        .images { display: flex; gap: 20px; flex-wrap: wrap; }
+        img { width: 45%; border: 1px solid #ddd; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>📊 Rapport d'Évaluation — XGBoost IDS CICIDS2017</h1>
+
+    <h2>Métriques de Performance</h2>
+    <table>
+        <tr><th>Métrique</th><th>Valeur</th></tr>
+        <tr style=''><td><b>accuracy</b></td><td>0.998586</td></tr><tr style='background:#eafaf1'><td><b>f1_score</b></td><td>0.998588</td></tr><tr style=''><td><b>precision</b></td><td>0.998597</td></tr><tr style=''><td><b>recall</b></td><td>0.998586</td></tr><tr style='background:#eafaf1'><td><b>roc_auc</b></td><td>0.999984</td></tr><tr style='background:#eafaf1'><td><b>false_positive_rate</b></td><td>0.001597</td></tr><tr style=''><td><b>false_negative_rate</b></td><td>0.000401</td></tr>
+    </table>
+
+    <h2>Rapport de Classification Détaillé</h2>
+    <pre>              precision    recall  f1-score   support
+
+      BENIGN       1.00      1.00      1.00    372506
+      ATTACK       0.99      1.00      1.00     67295
+
+    accuracy                           1.00    439801
+   macro avg       1.00      1.00      1.00    439801
+weighted avg       1.00      1.00      1.00    439801
+</pre>
+
+    <h2>Visualisations</h2>
+    <div class="images">
+        <img src="confusion_matrix_test.png" alt="Matrice de confusion">
+        <img src="roc_curve.png" alt="Courbe ROC">
+        <img src="precision_recall_curve.png" alt="Courbe Precision-Recall">
+        <img src="feature_importance.png" alt="Feature Importance">
+    </div>
+</body>
+</html>

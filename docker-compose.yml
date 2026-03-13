@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────
+#  docker-compose.yml
+#  Stack de développement local complète
+#
+#  COMMENT UTILISER :
+#  > docker-compose up -d
+#
+#  Services lancés :
+#  - MLflow UI     → http://localhost:5000
+#  - IDS API       → http://localhost:8000
+#  - API Docs      → http://localhost:8000/docs
+# ─────────────────────────────────────────
+
+version: "3.8"
+
+services:
+
+  # ── MLflow Tracking Server ──────────────
+  mlflow:
+    image: python:3.10-slim
+    container_name: mlflow_server
+    working_dir: /mlflow
+    volumes:
+      - mlflow_data:/mlflow
+    ports:
+      - "5000:5000"
+    command: >
+      sh -c "pip install mlflow boto3 -q &&
+             mlflow server
+             --host 0.0.0.0
+             --port 5000
+             --backend-store-uri sqlite:///mlflow.db
+             --default-artifact-root /mlflow/artifacts"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── IDS API ─────────────────────────────
+  ids_api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ids_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./Model/data/processed:/app/Model/data/processed:ro
+      - ./Model/models/saved:/app/Model/models/saved:ro
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+volumes:
+  mlflow_data:
+    driver: local
