@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────
+#  .gitignore — SecuredMLOps
+# ─────────────────────────────────────────
+
+# Environnement virtuel Python
+venv/
+env/
+.env
+
+# Données — trop lourdes pour GitHub (utiliser DVC)
+Model/data/raw/
+Model/data/processed/
+Model/data/*.html
+
+# Modèles sauvegardés — trop lourds pour GitHub
+Model/models/saved/
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# VS Code
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
