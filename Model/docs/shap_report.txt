@@ -1,0 +1,12 @@
+TOP 10 FEATURES — VALEURS SHAP MOYENNES
+=============================================
+ 1. Init_Win_bytes_forward              3.535073
+ 2. Init_Win_bytes_backward             2.450790
+ 3. Bwd Packet Length Std               1.275506
+ 4. Fwd Packet Length Max               1.051211
+ 5. Bwd Packet Length Mean              0.909250
+ 6. Bwd Packet Length Min               0.672919
+ 7. Flow IAT Min                        0.585036
+ 8. min_seg_size_forward                0.511208
+ 9. Total Length of Bwd Packets         0.490423
+10. Bwd Packets/s                       0.434159
