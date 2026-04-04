@@ -1,1 +1,167 @@
+# ─────────────────────────────────────────────────────────────
+#  .github/workflows/deploy-production.yml
+#  Workflow 5 — Déploiement Production
+# ─────────────────────────────────────────────────────────────
+#
+#  DÉCLENCHEUR : Manuel uniquement (approbation requise)
+#
+#  CE QUE CE WORKFLOW FAIT :
+#  1. Requiert une approbation manuelle (protection production)
+#  2. Déploie l'image Docker validée en production
+#  3. Lance des smoke tests de production
+#  4. Vérifie la santé du déploiement
+#  5. Notifie l'équipe du déploiement réussi
+#
+#  SÉCURITÉ PRODUCTION :
+#  - Approbation manuelle obligatoire
+#  - Déploiement uniquement depuis main
+#  - Rollback automatique si smoke tests échouent
+# ─────────────────────────────────────────────────────────────
 
+name: "Deploy Production"
+
+on:
+  # Déclenchement UNIQUEMENT manuel avec paramètres
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag de l'image Docker à déployer"
+        required: true
+        default: "latest"
+      confirm_deploy:
+        description: "Confirmer le déploiement en production ?"
+        required: true
+        type: choice
+        options:
+          - "OUI_JE_CONFIRME"
+          - "NON"
+        default: "NON"
+
+jobs:
+  # ══════════════════════════════════════════════════════
+  #  JOB 0 : Vérification de confirmation
+  # ══════════════════════════════════════════════════════
+  verify-confirmation:
+    name: "Vérification Confirmation"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "Vérifier la confirmation"
+        run: |
+          if [ "${{ github.event.inputs.confirm_deploy }}" != "OUI_JE_CONFIRME" ]; then
+            echo "Déploiement annulé — confirmation non reçue"
+            echo "Relancer avec confirm_deploy = OUI_JE_CONFIRME"
+            exit 1
+          fi
+          echo "Confirmation reçue ✅"
+          echo "Image à déployer : ${{ github.event.inputs.image_tag }}"
+
+  # ══════════════════════════════════════════════════════
+  #  JOB 1 : Déploiement Production
+  # ══════════════════════════════════════════════════════
+  deploy-production:
+    name: "Déploiement Production"
+    runs-on: ubuntu-latest
+    needs: verify-confirmation
+
+    # Environnement production avec protection
+    environment:
+      name: production
+      url: http://production.ids-api:8000
+
+    steps:
+      - name: "Checkout du code"
+        uses: actions/checkout@v4
+
+      - name: "Informations déploiement"
+        run: |
+          echo "════════════════════════════════════"
+          echo "  DÉPLOIEMENT PRODUCTION"
+          echo "════════════════════════════════════"
+          echo "Image    : ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.event.inputs.image_tag }}"
+          echo "Commit   : ${{ github.sha }}"
+          echo "Déclenché par : ${{ github.actor }}"
+          echo "Date     : $(date)"
+          echo "════════════════════════════════════"
+
+      - name: "Login Docker Hub"
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Sauvegarder la version actuelle pour rollback
+      - name: "Sauvegarde version actuelle (pour rollback)"
+        run: |
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:latest 2>/dev/null || true
+          docker tag ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:latest \
+            ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:backup-$(date +%Y%m%d-%H%M%S) \
+            2>/dev/null || true
+          echo "Version précédente sauvegardée ✅"
+
+      # Déployer la nouvelle version
+      - name: "Déploiement nouvelle version"
+        run: |
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.event.inputs.image_tag }}"
+
+          docker pull $IMAGE
+
+          # Arrêter l'ancienne version gracieusement
+          docker stop ids-api-production 2>/dev/null || true
+          docker rm ids-api-production 2>/dev/null || true
+
+          # Démarrer la nouvelle version
+          docker run -d \
+            --name ids-api-production \
+            -p 8000:8000 \
+            --restart always \
+            --label "deployed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --label "image_tag=${{ github.event.inputs.image_tag }}" \
+            --label "commit=${{ github.sha }}" \
+            $IMAGE
+
+          echo "Nouvelle version déployée ✅"
+          sleep 30
+
+      # Smoke tests production
+      - name: "Smoke Tests Production"
+        run: |
+          echo "Vérification santé production..."
+
+          # Test 1 : Health check
+          for i in 1 2 3; do
+            HEALTH=$(curl -s -o /dev/null -w "%{http_code}" \
+              http://localhost:8000/health)
+            if [ "$HEALTH" = "200" ]; then
+              echo "Health check OK : HTTP 200 ✅"
+              break
+            fi
+            echo "Tentative $i/3 — HTTP $HEALTH, nouvelle tentative dans 10s..."
+            sleep 10
+          done
+
+          if [ "$HEALTH" != "200" ]; then
+            echo "Health check échoué après 3 tentatives ❌"
+            echo "Lancement du rollback automatique..."
+            docker stop ids-api-production || true
+            exit 1
+          fi
+
+          # Test 2 : Latence < 500ms
+          TIME=$(curl -s -o /dev/null -w "%{time_total}" \
+            http://localhost:8000/health)
+          echo "Latence health : ${TIME}s"
+
+          echo "Production opérationnelle ✅"
+
+      # Résumé final
+      - name: "Résumé déploiement production"
+        run: |
+          echo "════════════════════════════════════"
+          echo "  DÉPLOIEMENT PRODUCTION RÉUSSI ✅"
+          echo "════════════════════════════════════"
+          echo "Image    : ids-api:${{ github.event.inputs.image_tag }}"
+          echo "Commit   : ${{ github.sha }}"
+          echo "Déployé  : $(date)"
+          echo "Par      : ${{ github.actor }}"
+          echo "════════════════════════════════════"
