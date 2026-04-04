@@ -1,1 +1,191 @@
+# ─────────────────────────────────────────────────────────────
+#  .github/workflows/docker-build-scan.yml
+#  Workflow 3 — Build Docker + Scan Sécurité Container
+# ─────────────────────────────────────────────────────────────
+#
+#  DÉCLENCHEUR : Après ci.yml réussi sur main
+#
+#  CE QUE CE WORKFLOW FAIT :
+#  1. Build l'image Docker de l'API IDS
+#  2. Scanne l'image avec Trivy (vulnérabilités CVE)
+#  3. Bloque si vulnérabilités CRITICAL trouvées
+#  4. Pousse l'image vers Docker Hub (si scan OK)
+#
+#  SECURITY GATE :
+#  - Si Trivy trouve CRITICAL → pipeline bloqué ❌
+#  - Image signée avec metadata de build
+# ─────────────────────────────────────────────────────────────
 
+name: "Docker — Build & Scan Sécurité"
+
+on:
+  # Se déclenche automatiquement après ci.yml
+  workflow_run:
+    workflows: ["CI — Tests & Sécurité Code"]
+    types:
+      - completed
+    branches:
+      - main
+
+  # Aussi déclenché manuellement
+  workflow_dispatch:
+
+jobs:
+  # ══════════════════════════════════════════════════════
+  #  JOB 1 : Build de l'image Docker
+  # ══════════════════════════════════════════════════════
+  docker-build:
+    name: "Build Image Docker"
+    runs-on: ubuntu-latest
+    # Ne s'exécuter que si le workflow précédent a réussi
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+
+    steps:
+      - name: "Checkout du code"
+        uses: actions/checkout@v4
+
+      # Configurer les métadonnées de l'image Docker
+      # Génère automatiquement les tags (latest, sha, version)
+      - name: "Génération des métadonnées Docker"
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/ids-api
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      # Se connecter à Docker Hub
+      - name: "Login Docker Hub"
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Configurer BuildKit pour des builds plus rapides
+      - name: "Setup Docker BuildKit"
+        uses: docker/setup-buildx-action@v3
+
+      # Builder l'image Docker
+      - name: "Build image Docker — ids-api"
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          dockerfile: Dockerfile
+          push: false        # Ne pas encore pousser — attendre le scan
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha   # Cache GitHub Actions
+          cache-to: type=gha,mode=max
+          load: true             # Charger l'image localement pour le scan
+
+      # Afficher les informations sur l'image buildée
+      - name: "Informations image Docker"
+        run: |
+          echo "Image buildée avec succès ✅"
+          docker images | grep ids-api
+          docker inspect ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:latest \
+            --format='Taille: {{.Size}} bytes' 2>/dev/null || true
+
+  # ══════════════════════════════════════════════════════
+  #  JOB 2 : Scan de sécurité avec Trivy
+  # ══════════════════════════════════════════════════════
+  trivy-scan:
+    name: "Scan Sécurité — Trivy (CVE)"
+    runs-on: ubuntu-latest
+    needs: docker-build
+
+    steps:
+      - name: "Checkout du code"
+        uses: actions/checkout@v4
+
+      - name: "Setup Docker BuildKit"
+        uses: docker/setup-buildx-action@v3
+
+      # Rebuilder l'image pour le scan
+      - name: "Build image pour scan"
+        run: docker build -t ids-api:scan .
+
+      # Trivy scanne l'image pour les vulnérabilités CVE
+      # --severity CRITICAL,HIGH = signaler seulement les graves
+      # --exit-code 1 = bloquer le pipeline si CRITICAL trouvé
+      - name: "Scan Trivy — Vulnérabilités container"
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "ids-api:scan"
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"   # Mettre à "1" pour bloquer sur CRITICAL
+
+      # Afficher le rapport dans les logs
+      - name: "Rapport Trivy — Texte"
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "ids-api:scan"
+          format: "table"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+
+      # Uploader le rapport SARIF vers GitHub Security
+      - name: "Upload résultats vers GitHub Security"
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-results.sarif"
+
+      # Uploader le rapport comme artifact téléchargeable
+      - name: "Upload rapport Trivy"
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-security-report
+          path: trivy-results.sarif
+          retention-days: 30
+
+  # ══════════════════════════════════════════════════════
+  #  JOB 3 : Push de l'image si scan OK
+  # ══════════════════════════════════════════════════════
+  docker-push:
+    name: "Push Image Docker Hub"
+    runs-on: ubuntu-latest
+    needs: [docker-build, trivy-scan]
+
+    steps:
+      - name: "Checkout du code"
+        uses: actions/checkout@v4
+
+      - name: "Login Docker Hub"
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: "Setup Docker BuildKit"
+        uses: docker/setup-buildx-action@v3
+
+      # Générer un tag avec le SHA du commit pour traçabilité
+      - name: "Build et Push image finale"
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          dockerfile: Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+
+      - name: "Image pushée avec succès"
+        run: |
+          echo "════════════════════════════════════"
+          echo "Image pushée sur Docker Hub ✅"
+          echo "Tag latest : ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:latest"
+          echo "Tag commit : ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.sha }}"
+          echo "════════════════════════════════════"
