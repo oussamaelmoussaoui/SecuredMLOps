@@ -2,29 +2,10 @@
 #  .github/workflows/training.yml
 #  Workflow 2 — Entraînement ML Automatisé
 # ─────────────────────────────────────────────────────────────
-#
-#  DÉCLENCHEUR :
-#  - Manuel (workflow_dispatch) avec paramètres
-#  - Push dans Model/src/models/ ou params.yaml
-#
-#  CE QUE CE WORKFLOW FAIT :
-#  1. Récupère les données depuis DagsHub (dvc pull)
-#  2. Lance le preprocessing si nécessaire
-#  3. Entraîne le modèle XGBoost
-#  4. Évalue les métriques
-#  5. Compare avec le modèle en production
-#  6. Enregistre dans MLflow Registry
-#  7. Bloque si les métriques sont insuffisantes
-#
-#  SECURITY GATE ML :
-#  - Si F1 < 0.97  → pipeline bloqué ❌
-#  - Si AUC < 0.99 → pipeline bloqué ❌
-# ─────────────────────────────────────────────────────────────
 
 name: "Training — Entraînement ML"
 
 on:
-  # Déclenchement manuel depuis l'interface GitHub
   workflow_dispatch:
     inputs:
       run_preprocessing:
@@ -40,7 +21,6 @@ on:
         required: false
         default: "IDS_CICIDS2017"
 
-  # Déclenchement automatique sur modification des scripts ML
   push:
     branches:
       - main
@@ -66,13 +46,14 @@ jobs:
           python-version: "3.10"
           cache: "pip"
 
+      # ✅ CORRECTION : DVC installé explicitement AVANT de l'utiliser
       - name: "Installation des dépendances"
         run: |
           pip install --upgrade pip
+          pip install dvc dvc-s3 dagshub
           pip install -r requirements.txt
 
       # Configurer DVC avec les credentials DagsHub
-      # Les secrets sont stockés dans GitHub Settings → Secrets
       - name: "Configuration DVC — DagsHub"
         run: |
           dvc remote modify dagshub --local auth basic
@@ -115,7 +96,7 @@ jobs:
         with:
           name: processed-data
           path: Model/data/processed/
-          retention-days: 1   # Garder 1 jour seulement
+          retention-days: 1
 
   # ══════════════════════════════════════════════════════
   #  JOB 2 : Entraînement + Évaluation
@@ -135,8 +116,12 @@ jobs:
           python-version: "3.10"
           cache: "pip"
 
+      # ✅ CORRECTION : même fix dans le job 2
       - name: "Installation des dépendances"
-        run: pip install -r requirements.txt
+        run: |
+          pip install --upgrade pip
+          pip install dvc dvc-s3 dagshub
+          pip install -r requirements.txt
 
       # Récupérer les données du job précédent
       - name: "Download données preprocessées"
@@ -145,7 +130,7 @@ jobs:
           name: processed-data
           path: Model/data/processed/
 
-      # Configurer MLflow pour pointer vers le serveur
+      # Configurer MLflow
       - name: "Configuration MLflow"
         run: |
           echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> $GITHUB_ENV
@@ -161,25 +146,20 @@ jobs:
       - name: "Évaluation du modèle"
         run: python Model/src/models/evaluate.py
 
-      # Security Gate ML : vérifier que les métriques sont suffisantes
+      # Security Gate ML
       - name: "Security Gate — Validation métriques ML"
         run: |
           python -c "
-          import json
-          from pathlib import Path
-
-          # Lire les métriques générées par evaluate.py
-          report_path = Path('Model/docs/classification_report.txt')
-
-          print('Vérification des seuils de performance...')
-
           import numpy as np
           import joblib
           from sklearn.metrics import f1_score, roc_auc_score
+          from pathlib import Path
 
-          model = joblib.load('Model/models/saved/xgboost_ids.joblib')
-          X_test = np.load('Model/data/processed/X_test.npy')
-          y_test = np.load('Model/data/processed/y_test.npy')
+          print('Vérification des seuils de performance...')
+
+          model   = joblib.load('Model/models/saved/xgboost_ids.joblib')
+          X_test  = np.load('Model/data/processed/X_test.npy')
+          y_test  = np.load('Model/data/processed/y_test.npy')
 
           y_pred  = model.predict(X_test)
           y_proba = model.predict_proba(X_test)[:, 1]
@@ -190,7 +170,6 @@ jobs:
           print(f'F1-Score : {f1:.4f}')
           print(f'ROC-AUC  : {auc:.4f}')
 
-          # SECURITY GATE : bloquer si métriques insuffisantes
           if f1 < 0.97:
               raise ValueError(f'F1-Score insuffisant : {f1:.4f} < 0.97 — PIPELINE BLOQUÉ')
           if auc < 0.99:
