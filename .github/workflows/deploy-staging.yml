@@ -80,7 +80,6 @@ jobs:
     name: "DAST — OWASP ZAP"
     runs-on: ubuntu-latest
     needs: deploy-staging
-    # ✅ CORRECTION : permissions pour écrire les rapports
     permissions:
       contents: read
       issues: write
@@ -104,49 +103,48 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:latest
           echo "Attente démarrage API (40s)..."
           sleep 40
-          # ✅ CORRECTION : vérification avec retry
           for i in 1 2 3 4 5; do
             HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health)
             if [ "$HEALTH" = "200" ]; then
               echo "API prête pour le scan ZAP ✅"
               break
             fi
-            echo "Tentative $i — API pas encore prête (HTTP $HEALTH), attente 10s..."
+            echo "Tentative $i — HTTP $HEALTH, attente 10s..."
             sleep 10
           done
 
-      # ✅ CORRECTION : créer le dossier de sortie AVANT le scan
-      - name: "Préparation dossier rapports ZAP"
-        run: |
-          mkdir -p zap-reports
-          chmod 777 zap-reports
-
-      # ✅ CORRECTION : spécifier explicitement les chemins de sortie
+      # ─────────────────────────────────────────────────
+      # CORRECTION FINALE : utiliser report_html et
+      # report_json — paramètres NATIFS de l'action ZAP
+      # NE PAS utiliser cmd_options pour les rapports
+      # ─────────────────────────────────────────────────
       - name: "Scan OWASP ZAP — Baseline"
         uses: zaproxy/action-baseline@v0.11.0
         with:
           target: "http://localhost:8000"
-          rules_file_name: ".zap/rules.tsv"
-          cmd_options: "-a -J zap-reports/report_json.json -r zap-reports/report_html.html"
+          report_html: "zap-report.html"
+          report_json: "zap-report.json"
+          cmd_options: "-a"
           fail_action: false
         continue-on-error: true
 
-      # ✅ CORRECTION : vérifier que les fichiers existent avant upload
       - name: "Vérification fichiers rapports"
         if: always()
         run: |
-          echo "Contenu du dossier zap-reports :"
-          ls -lah zap-reports/ || echo "Dossier vide ou inexistant"
-          echo "Taille rapport HTML : $(wc -c < zap-reports/report_html.html 2>/dev/null || echo '0') bytes"
-          echo "Taille rapport JSON : $(wc -c < zap-reports/report_json.json 2>/dev/null || echo '0') bytes"
+          echo "=== Contenu workspace ==="
+          ls -lah ${{ github.workspace }}/
+          echo ""
+          echo "Taille HTML : $(wc -c < ${{ github.workspace }}/zap-report.html 2>/dev/null || echo '0') bytes"
+          echo "Taille JSON : $(wc -c < ${{ github.workspace }}/zap-report.json 2>/dev/null || echo '0') bytes"
 
-      # ✅ CORRECTION : chemin corrigé vers zap-reports/
       - name: "Upload rapport OWASP ZAP"
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: owasp-zap-report
-          path: zap-reports/
+          path: |
+            ${{ github.workspace }}/zap-report.html
+            ${{ github.workspace }}/zap-report.json
           retention-days: 30
 
       - name: "Résumé scan ZAP"
@@ -155,18 +153,24 @@ jobs:
           echo "════════════════════════════════════"
           echo "  RAPPORT OWASP ZAP"
           echo "════════════════════════════════════"
-          if [ -f zap-reports/report_json.json ]; then
-            HIGH=$(cat zap-reports/report_json.json | python3 -c "
-          import json,sys
-          data=json.load(sys.stdin)
-          alerts=data.get('site',[{}])[0].get('alerts',[]) if data.get('site') else []
-          high=[a for a in alerts if a.get('riskdesc','').startswith('High')]
-          medium=[a for a in alerts if a.get('riskdesc','').startswith('Medium')]
-          print(f'High: {len(high)}, Medium: {len(medium)}')
-          " 2>/dev/null || echo "N/A")
-            echo "Vulnérabilités trouvées : $HIGH"
+          if [ -f "${{ github.workspace }}/zap-report.json" ]; then
+            python3 -c "
+          import json
+          with open('${{ github.workspace }}/zap-report.json') as f:
+              data = json.load(f)
+          sites = data.get('site', [])
+          if sites:
+              alerts = sites[0].get('alerts', [])
+              high   = [a for a in alerts if a.get('riskdesc','').startswith('High')]
+              medium = [a for a in alerts if a.get('riskdesc','').startswith('Medium')]
+              low    = [a for a in alerts if a.get('riskdesc','').startswith('Low')]
+              print(f'High   : {len(high)}')
+              print(f'Medium : {len(medium)}')
+              print(f'Low    : {len(low)}')
+          else:
+              print('Aucune alerte trouvée')
+          " 2>/dev/null || echo "Impossible de parser le rapport"
           fi
-          echo "Rapport disponible dans les artifacts."
           echo "════════════════════════════════════"
 
       - name: "Nettoyage conteneurs"
