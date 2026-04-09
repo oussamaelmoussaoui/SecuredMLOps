@@ -113,29 +113,26 @@ jobs:
             sleep 10
           done
 
-      # ─────────────────────────────────────────────────
-      # CORRECTION FINALE : utiliser report_html et
-      # report_json — paramètres NATIFS de l'action ZAP
-      # NE PAS utiliser cmd_options pour les rapports
-      # ─────────────────────────────────────────────────
       - name: "Scan OWASP ZAP — Baseline"
         uses: zaproxy/action-baseline@v0.11.0
         with:
-          target: "http://localhost:8000"
-          report_html: "zap-report.html"
-          report_json: "zap-report.json"
-          cmd_options: "-a"
+          target: "http://host.docker.internal:8000"
+          allow_issue_writing: false
+          cmd_options: "-a -J zap-report.json -r zap-report.html"
           fail_action: false
         continue-on-error: true
 
-      - name: "Vérification fichiers rapports"
+      - name: "Recherche des rapports ZAP"
         if: always()
         run: |
           echo "=== Contenu workspace ==="
-          ls -lah ${{ github.workspace }}/
+          ls -lah $GITHUB_WORKSPACE/
           echo ""
-          echo "Taille HTML : $(wc -c < ${{ github.workspace }}/zap-report.html 2>/dev/null || echo '0') bytes"
-          echo "Taille JSON : $(wc -c < ${{ github.workspace }}/zap-report.json 2>/dev/null || echo '0') bytes"
+          echo "=== Recherche fichiers zap-report* ==="
+          find /home/runner/work -name "zap-report*" 2>/dev/null || true
+          echo ""
+          echo "=== Recherche tous fichiers .html et .json ==="
+          find /home/runner/work -name "*.html" -o -name "*.json" 2>/dev/null | grep -v node_modules || true
 
       - name: "Upload rapport OWASP ZAP"
         uses: actions/upload-artifact@v4
@@ -143,8 +140,9 @@ jobs:
         with:
           name: owasp-zap-report
           path: |
-            ${{ github.workspace }}/zap-report.html
-            ${{ github.workspace }}/zap-report.json
+            zap-report.html
+            zap-report.json
+          if-no-files-found: warn
           retention-days: 30
 
       - name: "Résumé scan ZAP"
@@ -153,10 +151,10 @@ jobs:
           echo "════════════════════════════════════"
           echo "  RAPPORT OWASP ZAP"
           echo "════════════════════════════════════"
-          if [ -f "${{ github.workspace }}/zap-report.json" ]; then
+          if [ -f "$GITHUB_WORKSPACE/zap-report.json" ]; then
             python3 -c "
           import json
-          with open('${{ github.workspace }}/zap-report.json') as f:
+          with open('$GITHUB_WORKSPACE/zap-report.json') as f:
               data = json.load(f)
           sites = data.get('site', [])
           if sites:
@@ -170,6 +168,8 @@ jobs:
           else:
               print('Aucune alerte trouvée')
           " 2>/dev/null || echo "Impossible de parser le rapport"
+          else
+            echo "Rapport JSON non trouvé"
           fi
           echo "════════════════════════════════════"
 
