@@ -3,7 +3,7 @@
 #  .github/workflows/ci.yml
 #  Workflow 1 — Intégration Continue + Sécurité Code
 # ─────────────────────────────────────────────────────────────
-#
+# 
 #  DÉCLENCHEUR : Push ou Pull Request sur main/develop
 #
 #  CE QUE CE WORKFLOW FAIT :
