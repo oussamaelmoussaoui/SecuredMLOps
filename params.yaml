@@ -43,7 +43,7 @@ optuna:
   direction: "maximize"          # maximiser le F1-Score
 
 mlflow:
-  tracking_uri: "http://localhost:5000"
+  tracking_uri: file:./mlruns
   experiment_name: "IDS_CICIDS2017"
   model_registry_name: "IDS_XGBoost_Model"
 
