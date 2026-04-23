@@ -74,7 +74,6 @@ def load_data():
 
 def compute_metrics(y_true, y_pred, y_proba) -> dict:
     """Calculer toutes les métriques d'évaluation."""
-    # ✅ FIX : roc_auc_score adapté automatiquement binaire ou multiclasse
     n_classes = len(np.unique(y_true))
     if n_classes == 2:
         auc = float(roc_auc_score(y_true, y_proba[:, 1]))
@@ -152,7 +151,6 @@ def train_xgboost(X_train, y_train, X_val, y_val,
     """Modèle principal — XGBoost."""
     logger.info("\n── Entraînement XGBoost (Modèle Principal) ──")
 
-    # ✅ FIX : utilise la variable d'env MLFLOW_EXPERIMENT_NAME si présente
     experiment_name = os.environ.get(
         "MLFLOW_EXPERIMENT_NAME",
         params["mlflow"]["experiment_name"]
@@ -259,7 +257,6 @@ def train_xgboost(X_train, y_train, X_val, y_val,
 
         run_id = run.info.run_id
         logger.info(f"MLflow Run ID : {run_id}")
-        # ✅ FIX : URL MLflow dynamique selon l'URI réelle (plus localhost hardcodé)
         tracking_uri = mlflow.get_tracking_uri()
         logger.info(f"Voir l'expérience : {tracking_uri}")
 
@@ -276,12 +273,15 @@ def main():
 
     params = load_params()
 
-    # ✅ FIX PRINCIPAL : lire MLFLOW_TRACKING_URI depuis l'environnement EN PRIORITÉ
-    #    Si absent (local), fallback sur params.yaml
-    tracking_uri = os.environ.get(
-        "MLFLOW_TRACKING_URI",
-        params["mlflow"]["tracking_uri"]
-    )
+    # ✅ CORRECTION POUR GITHUB ACTIONS
+    # Utiliser SQLite en CI pour éviter les problèmes de schéma
+    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", params["mlflow"]["tracking_uri"])
+    
+    if os.environ.get("CI") == "true":
+        # En CI (GitHub Actions), utiliser SQLite local
+        tracking_uri = "sqlite:///mlflow.db"
+        logger.info("🔧 CI détectée: utilisation de SQLite au lieu de file:./mlruns")
+    
     mlflow.set_tracking_uri(tracking_uri)
     logger.info(f"MLflow Tracking URI : {tracking_uri}")
 
