@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────
 #  .github/workflows/training.yml
-#  Workflow 2 — Entraînement ML Automatisé
+#  Workflow 2 — Entraînement ML Automatisé (VERSION CORRIGÉE)
 # ─────────────────────────────────────────────────────────────
 
 name: "Training — Entraînement ML"
@@ -46,7 +46,6 @@ jobs:
           python-version: "3.10"
           cache: "pip"
 
-      # ✅ CORRECTION : DVC installé explicitement AVANT de l'utiliser
       - name: "Installation des dépendances"
         run: |
           pip install --upgrade pip
@@ -61,10 +60,10 @@ jobs:
           dvc remote modify dagshub --local password ${{ secrets.DAGSHUB_TOKEN }}
 
       # Récupérer les données versionnées
+      # ✅ FIX #4 : suppression de "dvc checkout --force" redondant après dvc pull
       - name: "DVC Pull — Récupération données"
         run: |
           dvc pull
-          dvc checkout --force
 
       # Vérifier que les données sont bien présentes
       - name: "Vérification des données"
@@ -82,21 +81,21 @@ jobs:
           print('Données prêtes ✅')
           "
 
-      # Preprocessing optionnel selon le paramètre d'entrée
-      - name: "Preprocessing (si demandé)"
-        if: ${{ github.event.inputs.run_preprocessing == 'true' }}
+      # ✅ FIX #5 : Preprocessing lancé aussi sur push (pas seulement workflow_dispatch)
+      - name: "Preprocessing (si demandé ou push)"
+        if: ${{ github.event.inputs.run_preprocessing == 'true' || github.event_name == 'push' }}
         run: |
           echo "Lancement du preprocessing complet..."
           python Model/src/data/preprocess.py
           python Model/src/data/balance.py
 
-      # Uploader les données comme artifact pour le job suivant
+      # ✅ FIX #6 : retention-days passé de 1 à 3 pour éviter expiration
       - name: "Upload données preprocessées"
         uses: actions/upload-artifact@v4
         with:
           name: processed-data
           path: Model/data/processed/
-          retention-days: 1
+          retention-days: 3
 
   # ══════════════════════════════════════════════════════
   #  JOB 2 : Entraînement + Évaluation
@@ -116,7 +115,6 @@ jobs:
           python-version: "3.10"
           cache: "pip"
 
-      # ✅ CORRECTION : même fix dans le job 2
       - name: "Installation des dépendances"
         run: |
           pip install --upgrade pip
@@ -130,13 +128,18 @@ jobs:
           name: processed-data
           path: Model/data/processed/
 
-      # Configurer MLflow
+      # ✅ FIX #1 : Ajout des credentials MLflow (DAGSHUB_USERNAME + DAGSHUB_TOKEN)
+      #            Sans ça, MLflow tombe sur localhost:5000 → Connection refused
       - name: "Configuration MLflow"
         run: |
           echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> $GITHUB_ENV
+          echo "MLFLOW_TRACKING_USERNAME=${{ secrets.DAGSHUB_USERNAME }}" >> $GITHUB_ENV
+          echo "MLFLOW_TRACKING_PASSWORD=${{ secrets.DAGSHUB_TOKEN }}" >> $GITHUB_ENV
 
-      # Lancer l'entraînement
+      # ✅ FIX #2 : experiment_name transmis via variable d'env au script train.py
       - name: "Entraînement XGBoost"
+        env:
+          MLFLOW_EXPERIMENT_NAME: ${{ github.event.inputs.experiment_name || 'IDS_CICIDS2017' }}
         run: |
           echo "Démarrage entraînement..."
           python Model/src/models/train.py
@@ -146,7 +149,7 @@ jobs:
       - name: "Évaluation du modèle"
         run: python Model/src/models/evaluate.py
 
-      # Security Gate ML
+      # ✅ FIX #3 : roc_auc_score corrigé pour le cas multiclasse (CICIDS2017 = plusieurs classes)
       - name: "Security Gate — Validation métriques ML"
         run: |
           python -c "
@@ -162,13 +165,20 @@ jobs:
           y_test  = np.load('Model/data/processed/y_test.npy')
 
           y_pred  = model.predict(X_test)
-          y_proba = model.predict_proba(X_test)[:, 1]
+          y_proba = model.predict_proba(X_test)
 
           f1  = f1_score(y_test, y_pred, average='weighted')
-          auc = roc_auc_score(y_test, y_proba)
 
-          print(f'F1-Score : {f1:.4f}')
-          print(f'ROC-AUC  : {auc:.4f}')
+          # ✅ FIX : multi_class='ovr' + average='weighted' pour CICIDS2017 multiclasse
+          n_classes = len(np.unique(y_test))
+          if n_classes == 2:
+              auc = roc_auc_score(y_test, y_proba[:, 1])
+          else:
+              auc = roc_auc_score(y_test, y_proba, multi_class='ovr', average='weighted')
+
+          print(f'F1-Score  : {f1:.4f}')
+          print(f'ROC-AUC   : {auc:.4f}')
+          print(f'Nb classes: {n_classes}')
 
           if f1 < 0.97:
               raise ValueError(f'F1-Score insuffisant : {f1:.4f} < 0.97 — PIPELINE BLOQUÉ')
