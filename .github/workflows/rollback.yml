@@ -1,85 +1,58 @@
 # ─────────────────────────────────────────────────────────────
-#  .github/workflows/deploy-production.yml
-#  Workflow 5 — Déploiement Production
+#  .github/workflows/rollback.yml
+#  Workflow 6 — Rollback (Retour Arrière d'Urgence)
 # ─────────────────────────────────────────────────────────────
 #
-#  DÉCLENCHEUR : Manuel uniquement (approbation requise)
+#  DÉCLENCHEUR : Manuel uniquement (incident en production)
 #
 #  CE QUE CE WORKFLOW FAIT :
-#  1. Requiert une approbation manuelle (protection production)
-#  2. Déploie l'image Docker validée en production
-#  3. Lance des smoke tests de production
-#  4. Vérifie la santé du déploiement
-#  5. Notifie l'équipe du déploiement réussi
+#  1. Identifie la version précédente stable
+#  2. Reploie l'ancienne image Docker
+#  3. Vérifie que le rollback a fonctionné
+#  4. Notifie l'équipe
 #
-#  SÉCURITÉ PRODUCTION :
-#  - Approbation manuelle obligatoire
-#  - Déploiement uniquement depuis main
-#  - Rollback automatique si smoke tests échouent
+#  QUAND L'UTILISER :
+#  - Nouveau déploiement cause des erreurs en production
+#  - Métriques ML dégradées après mise à jour
+#  - Incidents de sécurité détectés
 # ─────────────────────────────────────────────────────────────
 
-name: "Deploy Production"
+name: "Rollback — Retour Arrière d'Urgence"
 
 on:
-  # Déclenchement UNIQUEMENT manuel avec paramètres
   workflow_dispatch:
     inputs:
-      image_tag:
-        description: "Tag de l'image Docker à déployer"
+      rollback_version:
+        description: "Tag de la version vers laquelle revenir"
+        required: false
+        default: "previous"
+      reason:
+        description: "Raison du rollback (pour les logs d'audit)"
         required: true
-        default: "latest"
-      confirm_deploy:
-        description: "Confirmer le déploiement en production ?"
-        required: true
-        type: choice
-        options:
-          - "OUI_JE_CONFIRME"
-          - "NON"
-        default: "NON"
+        default: "Incident en production"
 
 jobs:
   # ══════════════════════════════════════════════════════
-  #  JOB 0 : Vérification de confirmation
+  #  JOB 1 : Rollback
   # ══════════════════════════════════════════════════════
-  verify-confirmation:
-    name: "Vérification Confirmation"
+  rollback:
+    name: "Rollback Production"
     runs-on: ubuntu-latest
 
-    steps:
-      - name: "Vérifier la confirmation"
-        run: |
-          if [ "${{ github.event.inputs.confirm_deploy }}" != "OUI_JE_CONFIRME" ]; then
-            echo "Déploiement annulé — confirmation non reçue"
-            echo "Relancer avec confirm_deploy = OUI_JE_CONFIRME"
-            exit 1
-          fi
-          echo "Confirmation reçue ✅"
-          echo "Image à déployer : ${{ github.event.inputs.image_tag }}"
-
-  # ══════════════════════════════════════════════════════
-  #  JOB 1 : Déploiement Production
-  # ══════════════════════════════════════════════════════
-  deploy-production:
-    name: "Déploiement Production"
-    runs-on: ubuntu-latest
-    needs: verify-confirmation
-
-    # Environnement production avec protection
     environment:
       name: production
-      url: http://production.ids-api:8000
 
     steps:
       - name: "Checkout du code"
         uses: actions/checkout@v4
 
-      - name: "Informations déploiement"
+      - name: "Informations rollback"
         run: |
           echo "════════════════════════════════════"
-          echo "  DÉPLOIEMENT PRODUCTION"
+          echo "  ROLLBACK D'URGENCE"
           echo "════════════════════════════════════"
-          echo "Image    : ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.event.inputs.image_tag }}"
-          echo "Commit   : ${{ github.sha }}"
+          echo "Raison   : ${{ github.event.inputs.reason }}"
+          echo "Version  : ${{ github.event.inputs.rollback_version }}"
           echo "Déclenché par : ${{ github.actor }}"
           echo "Date     : $(date)"
           echo "════════════════════════════════════"
@@ -90,78 +63,73 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Sauvegarder la version actuelle pour rollback
-      - name: "Sauvegarde version actuelle (pour rollback)"
+      # Déterminer la version de rollback
+      - name: "Identification version rollback"
+        id: rollback-version
         run: |
-          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:latest 2>/dev/null || true
-          docker tag ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:latest \
-            ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:backup-$(date +%Y%m%d-%H%M%S) \
-            2>/dev/null || true
-          echo "Version précédente sauvegardée ✅"
+          if [ "${{ github.event.inputs.rollback_version }}" = "previous" ]; then
+            # Utiliser le commit Git précédent
+            PREV_COMMIT=$(git rev-parse HEAD~1 | cut -c1-7)
+            echo "version=sha-${PREV_COMMIT}" >> $GITHUB_OUTPUT
+            echo "Rollback vers commit précédent : sha-${PREV_COMMIT}"
+          else
+            echo "version=${{ github.event.inputs.rollback_version }}" >> $GITHUB_OUTPUT
+            echo "Rollback vers : ${{ github.event.inputs.rollback_version }}"
+          fi
 
-      # Déployer la nouvelle version
-      - name: "Déploiement nouvelle version"
+      # Arrêter la version actuelle
+      - name: "Arrêt version actuelle"
         run: |
-          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.event.inputs.image_tag }}"
+          echo "Arrêt de la version actuelle..."
+          docker stop ids-api-production 2>/dev/null || echo "Conteneur déjà arrêté"
+          docker rm ids-api-production 2>/dev/null || echo "Conteneur déjà supprimé"
 
+      # Déployer l'ancienne version
+      - name: "Déploiement version précédente"
+        run: |
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ steps.rollback-version.outputs.version }}"
+
+          echo "Récupération image : $IMAGE"
           docker pull $IMAGE
 
-          # Arrêter l'ancienne version gracieusement
-          docker stop ids-api-production 2>/dev/null || true
-          docker rm ids-api-production 2>/dev/null || true
-
-          # Démarrer la nouvelle version
+          echo "Démarrage ancienne version..."
           docker run -d \
             --name ids-api-production \
             -p 8000:8000 \
             --restart always \
-            --label "deployed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --label "image_tag=${{ github.event.inputs.image_tag }}" \
-            --label "commit=${{ github.sha }}" \
+            --label "rollback=true" \
+            --label "rollback_reason=${{ github.event.inputs.reason }}" \
+            --label "rolled_back_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             $IMAGE
 
-          echo "Nouvelle version déployée ✅"
           sleep 30
+          echo "Ancienne version démarrée ✅"
 
-      # Smoke tests production
-      - name: "Smoke Tests Production"
+      # Vérifier que le rollback fonctionne
+      - name: "Vérification rollback"
         run: |
-          echo "Vérification santé production..."
+          HEALTH=$(curl -s -o /dev/null -w "%{http_code}" \
+            http://localhost:8000/health)
 
-          # Test 1 : Health check
-          for i in 1 2 3; do
-            HEALTH=$(curl -s -o /dev/null -w "%{http_code}" \
-              http://localhost:8000/health)
-            if [ "$HEALTH" = "200" ]; then
-              echo "Health check OK : HTTP 200 ✅"
-              break
-            fi
-            echo "Tentative $i/3 — HTTP $HEALTH, nouvelle tentative dans 10s..."
-            sleep 10
-          done
-
-          if [ "$HEALTH" != "200" ]; then
-            echo "Health check échoué après 3 tentatives ❌"
-            echo "Lancement du rollback automatique..."
-            docker stop ids-api-production || true
+          if [ "$HEALTH" = "200" ]; then
+            echo "Rollback réussi — API opérationnelle ✅"
+          else
+            echo "Rollback échoué — HTTP $HEALTH ❌"
+            echo "INTERVENTION MANUELLE REQUISE"
             exit 1
           fi
 
-          # Test 2 : Latence < 500ms
-          TIME=$(curl -s -o /dev/null -w "%{time_total}" \
-            http://localhost:8000/health)
-          echo "Latence health : ${TIME}s"
-
-          echo "Production opérationnelle ✅"
-
-      # Résumé final
-      - name: "Résumé déploiement production"
+      - name: "Résumé rollback"
+        if: always()
         run: |
           echo "════════════════════════════════════"
-          echo "  DÉPLOIEMENT PRODUCTION RÉUSSI ✅"
+          echo "  ROLLBACK TERMINÉ"
           echo "════════════════════════════════════"
-          echo "Image    : ids-api:${{ github.event.inputs.image_tag }}"
-          echo "Commit   : ${{ github.sha }}"
-          echo "Déployé  : $(date)"
-          echo "Par      : ${{ github.actor }}"
+          echo "Version restaurée : ${{ steps.rollback-version.outputs.version }}"
+          echo "Raison            : ${{ github.event.inputs.reason }}"
+          echo "Par               : ${{ github.actor }}"
+          echo "Heure             : $(date)"
+          echo ""
+          echo "Action requise : Investiguer et corriger"
+          echo "le problème avant de redéployer."
           echo "════════════════════════════════════"
