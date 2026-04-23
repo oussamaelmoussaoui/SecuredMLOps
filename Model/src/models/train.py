@@ -2,23 +2,9 @@
 #  Model/src/models/train.py
 #  Étape 5 — Entraînement du modèle XGBoost
 # ─────────────────────────────────────────
-#
-#  COMMENT UTILISER :
-#  Lance MLflow en parallèle d'abord :
-#  > mlflow ui --port 5000
-#
-#  Puis dans un autre terminal :
-#  > python Model/src/models/train.py
-#
-#  INPUT  : Model/data/processed/X_train_balanced.npy
-#           Model/data/processed/y_train_balanced.npy
-#           Model/data/processed/X_val.npy
-#           Model/data/processed/y_val.npy
-#  OUTPUT : Model sauvegardé dans MLflow Registry
-#           Model/models/saved/xgboost_ids.joblib
-# ─────────────────────────────────────────
 
 import logging
+import os
 import warnings
 from pathlib import Path
 
@@ -35,7 +21,7 @@ from sklearn.metrics import (
 )
 
 import matplotlib
-matplotlib.use("Agg")   # Pour Windows sans display
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore")
@@ -61,10 +47,8 @@ def load_params() -> dict:
 
 
 def load_data():
-    """Charger toutes les données preprocessées."""
     logger.info("Chargement des données...")
 
-    # Utiliser les données rééquilibrées pour le train
     balanced_path = PROCESSED_DIR / "X_train_balanced.npy"
     if balanced_path.exists():
         X_train = np.load(PROCESSED_DIR / "X_train_balanced.npy")
@@ -88,7 +72,6 @@ def load_data():
 
 
 def compute_metrics(y_true, y_pred, y_proba) -> dict:
-    """Calculer toutes les métriques d'évaluation."""
     return {
         "accuracy":            float((y_pred == y_true).mean()),
         "f1_score":            float(f1_score(y_true, y_pred, average="weighted")),
@@ -101,7 +84,6 @@ def compute_metrics(y_true, y_pred, y_proba) -> dict:
 
 
 def plot_confusion_matrix(y_true, y_pred, title: str, save_path: Path):
-    """Sauvegarder la matrice de confusion."""
     cm = confusion_matrix(y_true, y_pred)
     fig, ax = plt.subplots(figsize=(7, 6))
     im = ax.imshow(cm, interpolation="nearest", cmap="Blues")
@@ -130,7 +112,6 @@ def plot_confusion_matrix(y_true, y_pred, title: str, save_path: Path):
 #  MODÈLE 1 : BASELINE (Logistic Regression)
 # ─────────────────────────────────────────
 def train_baseline(X_train, y_train, X_val, y_val, params: dict) -> dict:
-    """Modèle de référence — Logistic Regression."""
     logger.info("\n── Entraînement Baseline (Logistic Regression) ──")
 
     mlflow.set_experiment(params["mlflow"]["experiment_name"])
@@ -164,14 +145,12 @@ def train_baseline(X_train, y_train, X_val, y_val, params: dict) -> dict:
 def train_xgboost(X_train, y_train, X_val, y_val,
                    X_test, y_test, feature_names: list,
                    params: dict) -> tuple:
-    """Modèle principal — XGBoost."""
     logger.info("\n── Entraînement XGBoost (Modèle Principal) ──")
 
     mlflow.set_experiment(params["mlflow"]["experiment_name"])
 
     with mlflow.start_run(run_name="xgboost_ids_detector") as run:
 
-        # Paramètres depuis params.yaml
         p = params["model"]
         model_params = {
             "n_estimators":       p["n_estimators"],
@@ -192,14 +171,12 @@ def train_xgboost(X_train, y_train, X_val, y_val,
             early_stopping_rounds=p["early_stopping_rounds"]
         )
 
-        # Entraînement avec early stopping
         model.fit(
             X_train, y_train,
             eval_set=[(X_val, y_val)],
             verbose=100
         )
 
-        # ── Évaluation sur Validation ──
         y_pred_val  = model.predict(X_val)
         y_proba_val = model.predict_proba(X_val)[:, 1]
         val_metrics = compute_metrics(y_val, y_pred_val, y_proba_val)
@@ -209,7 +186,6 @@ def train_xgboost(X_train, y_train, X_val, y_val,
             logger.info(f"  {k:<30} : {v:.4f}")
         mlflow.log_metrics({f"val_{k}": v for k, v in val_metrics.items()})
 
-        # ── Évaluation sur Test (final) ──
         y_pred_test  = model.predict(X_test)
         y_proba_test = model.predict_proba(X_test)[:, 1]
         test_metrics = compute_metrics(y_test, y_pred_test, y_proba_test)
@@ -219,7 +195,6 @@ def train_xgboost(X_train, y_train, X_val, y_val,
             logger.info(f"  {k:<30} : {v:.4f}")
         mlflow.log_metrics({f"test_{k}": v for k, v in test_metrics.items()})
 
-        # ── Rapport de classification ──
         report = classification_report(
             y_test, y_pred_test,
             target_names=["BENIGN", "ATTACK"]
@@ -231,7 +206,6 @@ def train_xgboost(X_train, y_train, X_val, y_val,
             f.write(report)
         mlflow.log_artifact(str(report_path))
 
-        # ── Matrices de confusion ──
         cm_val_path  = DOCS_DIR / "confusion_matrix_val.png"
         cm_test_path = DOCS_DIR / "confusion_matrix_test.png"
         plot_confusion_matrix(y_val, y_pred_val, "XGBoost — Validation", cm_val_path)
@@ -239,7 +213,6 @@ def train_xgboost(X_train, y_train, X_val, y_val,
         mlflow.log_artifact(str(cm_val_path))
         mlflow.log_artifact(str(cm_test_path))
 
-        # ── Importance des features ──
         importance = model.feature_importances_
         top_n = min(20, len(feature_names))
         idx   = importance.argsort()[-top_n:][::-1]
@@ -257,21 +230,18 @@ def train_xgboost(X_train, y_train, X_val, y_val,
         plt.close()
         mlflow.log_artifact(str(feat_path))
 
-        # ── Logger le modèle dans MLflow ──
         mlflow.xgboost.log_model(
             model,
             artifact_path="xgboost_ids_model",
             registered_model_name=params["mlflow"]["model_registry_name"]
         )
 
-        # ── Sauvegarder localement ──
         local_path = MODELS_DIR / "xgboost_ids.joblib"
         joblib.dump(model, local_path)
         logger.info(f"\nModèle sauvegardé localement : {local_path}")
 
         run_id = run.info.run_id
         logger.info(f"MLflow Run ID : {run_id}")
-        logger.info(f"Voir l'expérience : http://localhost:5000/#/experiments")
 
         return model, test_metrics, run_id
 
@@ -286,15 +256,19 @@ def main():
 
     params = load_params()
 
-    # Configurer MLflow
-    mlflow.set_tracking_uri(params["mlflow"]["tracking_uri"])
-    logger.info(f"MLflow Tracking URI : {params['mlflow']['tracking_uri']}")
+    # ─────────────────────────────────────────────────────
+    # CORRECTION : si la variable d'environnement
+    # MLFLOW_TRACKING_URI est définie (par GitHub Actions
+    # ou manuellement), elle prend priorité sur params.yaml
+    # Sinon on utilise ce qui est dans params.yaml
+    # Ça évite le crash localhost:5000 sur GitHub Actions
+    # ─────────────────────────────────────────────────────
+    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI") or params["mlflow"]["tracking_uri"]
+    mlflow.set_tracking_uri(tracking_uri)
+    logger.info(f"MLflow Tracking URI : {tracking_uri}")
 
-    # Charger les données
     X_train, X_val, X_test, y_train, y_val, y_test, feature_names = load_data()
 
-    # XGBoost directement (Baseline désactivée — trop gourmande en RAM sur 2.6M lignes)
-    logger.info("\n" + "="*40)
     model, test_metrics, run_id = train_xgboost(
         X_train, y_train, X_val, y_val,
         X_test, y_test, feature_names, params
