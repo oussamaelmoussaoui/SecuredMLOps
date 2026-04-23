@@ -58,7 +58,6 @@ jobs:
           dvc remote modify dagshub --local user ${{ secrets.DAGSHUB_USERNAME }}
           dvc remote modify dagshub --local password ${{ secrets.DAGSHUB_TOKEN }}
 
-      # ✅ FIX #4 : suppression de "dvc checkout --force" redondant
       - name: "DVC Pull — Récupération données"
         run: |
           dvc pull
@@ -78,7 +77,6 @@ jobs:
           print('Données prêtes ✅')
           "
 
-      # ✅ FIX #5 : preprocessing lancé aussi sur push
       - name: "Preprocessing (si demandé ou push)"
         if: ${{ github.event.inputs.run_preprocessing == 'true' || github.event_name == 'push' }}
         run: |
@@ -86,7 +84,6 @@ jobs:
           python Model/src/data/preprocess.py
           python Model/src/data/balance.py
 
-      # ✅ FIX #6 : retention-days 1 → 3
       - name: "Upload données preprocessées"
         uses: actions/upload-artifact@v4
         with:
@@ -124,33 +121,39 @@ jobs:
           name: processed-data
           path: Model/data/processed/
 
-      # ✅ FIX #1 : ajout USERNAME + PASSWORD pour que MLflow
-      #             s'authentifie sur DagsHub et ne tombe pas sur localhost:5000
-      - name: "Configuration MLflow"
+      # ✅ SECTION CORRIGÉE - Configuration MLflow avec migration auto
+      - name: "Configuration MLflow avec base locale"
         run: |
-          echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> $GITHUB_ENV
-          echo "MLFLOW_TRACKING_USERNAME=${{ secrets.DAGSHUB_USERNAME }}" >> $GITHUB_ENV
-          echo "MLFLOW_TRACKING_PASSWORD=${{ secrets.DAGSHUB_TOKEN }}" >> $GITHUB_ENV
+          # Utiliser SQLite local pour GitHub Actions
+          export MLFLOW_TRACKING_URI="sqlite:///mlflow.db"
+          echo "MLFLOW_TRACKING_URI=$MLFLOW_TRACKING_URI" >> $GITHUB_ENV
+          
+          # ✅ CRUCIAL : Migrer la base pour éviter l'erreur de schéma
+          echo "Vérification/migration de la base de données MLflow..."
+          mlflow db upgrade sqlite:///mlflow.db 2>/dev/null || {
+            echo "Base non existante, création..."
+            rm -f mlflow.db
+            mlflow db upgrade sqlite:///mlflow.db
+          }
+          
+          echo "✅ MLflow configuré avec SQLite local"
+          echo "   Tracking URI: $MLFLOW_TRACKING_URI"
 
-      # ✅ FIX #2 : experiment_name transmis via env var au script train.py
-      #             train.py lit maintenant os.environ.get("MLFLOW_EXPERIMENT_NAME")
       - name: "Entraînement XGBoost"
         env:
           MLFLOW_EXPERIMENT_NAME: ${{ github.event.inputs.experiment_name || 'IDS_CICIDS2017' }}
         run: |
           echo "Démarrage entraînement..."
+          echo "MLflow tracking URI: $MLFLOW_TRACKING_URI"
           python Model/src/models/train.py
           echo "Entraînement terminé ✅"
 
       - name: "Évaluation du modèle"
         run: python Model/src/models/evaluate.py
 
-      # ✅ FIX #3 : roc_auc_score corrigé pour multiclasse CICIDS2017
-      #             (la logique est maintenant dans train.py → compute_metrics)
       - name: "Security Gate — Validation métriques ML"
         run: |
           python -c "
-          import os
           import numpy as np
           import joblib
           from sklearn.metrics import f1_score, roc_auc_score
@@ -166,7 +169,6 @@ jobs:
 
           f1 = f1_score(y_test, y_pred, average='weighted')
 
-          # ✅ FIX : multiclasse OVR pour CICIDS2017
           n_classes = len(np.unique(y_test))
           if n_classes == 2:
               auc = roc_auc_score(y_test, y_proba[:, 1])
@@ -199,3 +201,13 @@ jobs:
           name: evaluation-reports
           path: Model/docs/
           retention-days: 30
+
+      - name: "Upload logs MLflow"
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlflow-logs
+          path: |
+            mlflow.db
+            mlruns/
+          retention-days: 7
