@@ -2,7 +2,7 @@
 #  .github/workflows/deploy-production.yml
 #  Workflow 5 — Déploiement Production
 # ─────────────────────────────────────────────────────────────
-#
+# 
 #  DÉCLENCHEUR : Manuel uniquement (approbation requise)
 #
 #  CE QUE CE WORKFLOW FAIT :
