@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────
 #  .github/workflows/rollback.yml
-#  Workflow 6 — Rollback (Retour Arrière d'Urgence)
+#  Workflow 6 — Rollback (Retour Arrière d'Urgence) 
 # ─────────────────────────────────────────────────────────────
 #
 #  DÉCLENCHEUR : Manuel uniquement (incident en production)
