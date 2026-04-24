@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────
 #  .github/workflows/docker-build-scan.yml
-#  Workflow 3 — Build Docker + Scan Sécurité Container
+#  Workflow 3 — Build Docker + Scan Sécurité Container 
 # ─────────────────────────────────────────────────────────────
 
 name: "Docker — Build & Scan Sécurité"
