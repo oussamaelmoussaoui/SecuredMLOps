@@ -26,12 +26,13 @@ on:
       - main
     paths:
       - "Model/src/models/**"
+      - "Model/src/data/**"
       - "params.yaml"
+      - "requirements.txt"
+      - ".dvc/**"
+      - "*.dvc"
 
 jobs:
-  # ══════════════════════════════════════════════════════
-  #  JOB 1 : Préparation des données
-  # ══════════════════════════════════════════════════════
   prepare-data:
     name: "Préparation des données"
     runs-on: ubuntu-latest
@@ -48,59 +49,71 @@ jobs:
 
       - name: "Installation des dépendances"
         run: |
-          pip install --upgrade pip
-          pip install dvc dvc-s3 dagshub
+          python -m pip install --upgrade pip
+          pip install "dvc[http]" dagshub
           pip install -r requirements.txt
 
-      - name: "Configuration DVC — DagsHub"
+      - name: "Vérifier la configuration DVC"
         run: |
-          dvc remote modify dagshub --local auth basic
-          dvc remote modify dagshub --local user ${{ secrets.DAGSHUB_USERNAME }}
-          dvc remote modify dagshub --local password ${{ secrets.DAGSHUB_TOKEN }}
+          test -f .dvc/config || (echo ".dvc/config introuvable" && exit 1)
+          dvc remote list
 
-      # ✅ FIX #4 : suppression de "dvc checkout --force" redondant
+      - name: "Configuration DVC — DagsHub"
+        env:
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          if [ -z "$DAGSHUB_USERNAME" ] || [ -z "$DAGSHUB_TOKEN" ]; then
+            echo "Secrets DagsHub manquants"
+            exit 1
+          fi
+
+          dvc remote modify dagshub --local auth basic
+          dvc remote modify dagshub --local user "$DAGSHUB_USERNAME"
+          dvc remote modify dagshub --local password "$DAGSHUB_TOKEN"
+
       - name: "DVC Pull — Récupération données"
         run: |
           dvc pull
+          dvc checkout --force
 
       - name: "Vérification des données"
         run: |
           echo "Vérification Model/data/processed/"
-          ls -la Model/data/processed/ || echo "Dossier vide"
-          python -c "
-          import numpy as np
-          from pathlib import Path
-          processed = Path('Model/data/processed')
-          files = list(processed.glob('*.npy'))
-          print(f'Fichiers .npy trouvés : {len(files)}')
-          if len(files) == 0:
-              raise FileNotFoundError('Données preprocessées manquantes')
-          print('Données prêtes ✅')
-          "
+          ls -la Model/data/processed/ || true
 
-      # ✅ FIX #5 : preprocessing lancé aussi sur push
-      - name: "Preprocessing (si demandé ou push)"
-        if: ${{ github.event.inputs.run_preprocessing == 'true' || github.event_name == 'push' }}
+          python - <<'PY'
+          from pathlib import Path
+          processed = Path("Model/data/processed")
+          npy_files = list(processed.glob("*.npy"))
+          print(f"Fichiers .npy trouvés : {len(npy_files)}")
+          if not npy_files:
+              raise FileNotFoundError("Données preprocessées manquantes dans Model/data/processed/")
+          print("Données prêtes ✅")
+          PY
+
+      - name: "Preprocessing (si demandé)"
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_preprocessing == 'true' }}
         run: |
           echo "Lancement du preprocessing complet..."
           python Model/src/data/preprocess.py
           python Model/src/data/balance.py
 
-      # ✅ FIX #6 : retention-days 1 → 3
       - name: "Upload données preprocessées"
         uses: actions/upload-artifact@v4
         with:
           name: processed-data
           path: Model/data/processed/
-          retention-days: 3
+          retention-days: 1
 
-  # ══════════════════════════════════════════════════════
-  #  JOB 2 : Entraînement + Évaluation
-  # ══════════════════════════════════════════════════════
   train-evaluate:
     name: "Entraînement XGBoost + Évaluation"
     runs-on: ubuntu-latest
     needs: prepare-data
+
+    env:
+      MLFLOW_TRACKING_URI: http://127.0.0.1:5000
+      MLFLOW_EXPERIMENT_NAME: ${{ inputs.experiment_name || 'IDS_CICIDS2017' }}
 
     steps:
       - name: "Checkout du code"
@@ -114,8 +127,7 @@ jobs:
 
       - name: "Installation des dépendances"
         run: |
-          pip install --upgrade pip
-          pip install dvc dvc-s3 dagshub
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: "Download données preprocessées"
@@ -124,19 +136,28 @@ jobs:
           name: processed-data
           path: Model/data/processed/
 
-      # ✅ FIX #1 : ajout USERNAME + PASSWORD pour que MLflow
-      #             s'authentifie sur DagsHub et ne tombe pas sur localhost:5000
-      - name: "Configuration MLflow"
+      - name: "Démarrage MLflow local"
         run: |
-          echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> $GITHUB_ENV
-          echo "MLFLOW_TRACKING_USERNAME=${{ secrets.DAGSHUB_USERNAME }}" >> $GITHUB_ENV
-          echo "MLFLOW_TRACKING_PASSWORD=${{ secrets.DAGSHUB_TOKEN }}" >> $GITHUB_ENV
+          nohup mlflow ui \
+            --backend-store-uri sqlite:///mlflow.db \
+            --host 127.0.0.1 \
+            --port 5000 > mlflow.log 2>&1 &
 
-      # ✅ FIX #2 : experiment_name transmis via env var au script train.py
-      #             train.py lit maintenant os.environ.get("MLFLOW_EXPERIMENT_NAME")
+          echo "Attente démarrage MLflow..."
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5000 || true)
+            if [ "$code" = "200" ] || [ "$code" = "301" ] || [ "$code" = "302" ]; then
+              echo "MLflow prêt ✅"
+              exit 0
+            fi
+            sleep 3
+          done
+
+          echo "MLflow n'a pas démarré correctement"
+          cat mlflow.log || true
+          exit 1
+
       - name: "Entraînement XGBoost"
-        env:
-          MLFLOW_EXPERIMENT_NAME: ${{ github.event.inputs.experiment_name || 'IDS_CICIDS2017' }}
         run: |
           echo "Démarrage entraînement..."
           python Model/src/models/train.py
@@ -145,45 +166,35 @@ jobs:
       - name: "Évaluation du modèle"
         run: python Model/src/models/evaluate.py
 
-      # ✅ FIX #3 : roc_auc_score corrigé pour multiclasse CICIDS2017
-      #             (la logique est maintenant dans train.py → compute_metrics)
-      - name: "Security Gate — Validation métriques ML"
+      - name: "Validation métriques ML"
         run: |
-          python -c "
-          import os
+          python - <<'PY'
           import numpy as np
           import joblib
           from sklearn.metrics import f1_score, roc_auc_score
 
-          print('Vérification des seuils de performance...')
+          print("Vérification des seuils de performance...")
 
-          model  = joblib.load('Model/models/saved/xgboost_ids.joblib')
-          X_test = np.load('Model/data/processed/X_test.npy')
-          y_test = np.load('Model/data/processed/y_test.npy')
+          model = joblib.load("Model/models/saved/xgboost_ids.joblib")
+          X_test = np.load("Model/data/processed/X_test.npy")
+          y_test = np.load("Model/data/processed/y_test.npy")
 
-          y_pred  = model.predict(X_test)
-          y_proba = model.predict_proba(X_test)
+          y_pred = model.predict(X_test)
+          y_proba = model.predict_proba(X_test)[:, 1]
 
-          f1 = f1_score(y_test, y_pred, average='weighted')
+          f1 = f1_score(y_test, y_pred, average="weighted")
+          auc = roc_auc_score(y_test, y_proba)
 
-          # ✅ FIX : multiclasse OVR pour CICIDS2017
-          n_classes = len(np.unique(y_test))
-          if n_classes == 2:
-              auc = roc_auc_score(y_test, y_proba[:, 1])
-          else:
-              auc = roc_auc_score(y_test, y_proba, multi_class='ovr', average='weighted')
-
-          print(f'F1-Score  : {f1:.4f}')
-          print(f'ROC-AUC   : {auc:.4f}')
-          print(f'Nb classes: {n_classes}')
+          print(f"F1-Score : {f1:.4f}")
+          print(f"ROC-AUC  : {auc:.4f}")
 
           if f1 < 0.97:
-              raise ValueError(f'F1-Score insuffisant : {f1:.4f} < 0.97 — PIPELINE BLOQUÉ')
+              raise ValueError(f"F1-Score insuffisant : {f1:.4f} < 0.97")
           if auc < 0.99:
-              raise ValueError(f'ROC-AUC insuffisant : {auc:.4f} < 0.99 — PIPELINE BLOQUÉ')
+              raise ValueError(f"ROC-AUC insuffisant : {auc:.4f} < 0.99")
 
-          print('Toutes les métriques valident les seuils ✅')
-          "
+          print("Toutes les métriques valident les seuils ✅")
+          PY
 
       - name: "Upload modèle entraîné"
         uses: actions/upload-artifact@v4
@@ -197,5 +208,8 @@ jobs:
         if: always()
         with:
           name: evaluation-reports
-          path: Model/docs/
+          path: |
+            Model/docs/
+            mlflow.log
+            mlflow.db
           retention-days: 30
