@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────
 #  .github/workflows/deploy-staging.yml
-#  Workflow 4 — Déploiement Staging + Tests Dynamiques
+#  Workflow 4 — Déploiement Staging + Tests Dynamiques 
 # ─────────────────────────────────────────────────────────────
 
 name: "Deploy Staging + OWASP ZAP"
