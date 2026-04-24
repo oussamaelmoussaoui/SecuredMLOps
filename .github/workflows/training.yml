@@ -136,11 +136,28 @@ jobs:
           mlflow db upgrade sqlite:///mlflow.db
 
       # ✅ Démarrer MLflow server en arrière-plan
-      - name: "Démarrer MLflow"
+      - name: "Démarrage MLflow local"
         run: |
-          mlflow server --backend-store-uri sqlite:///mlflow.db --port 5000 &
-          sleep 5
-          echo "MLflow server démarré sur port 5000"
+          rm -f mlflow.db
+      
+          nohup mlflow ui \
+            --backend-store-uri sqlite:///mlflow.db \
+            --host 127.0.0.1 \
+            --port 5000 > mlflow.log 2>&1 &
+      
+          echo "Attente démarrage MLflow..."
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5000 || true)
+            if [ "$code" = "200" ] || [ "$code" = "301" ] || [ "$code" = "302" ]; then
+              echo "MLflow prêt"
+              exit 0
+            fi
+            sleep 3
+          done
+      
+          echo "MLflow n'a pas démarré correctement"
+          cat mlflow.log || true
+          exit 1
 
       # ✅ FIX #2 : experiment_name transmis via env var au script train.py
       #             train.py lit maintenant os.environ.get("MLFLOW_EXPERIMENT_NAME")
