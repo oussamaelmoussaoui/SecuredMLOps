@@ -1,31 +1,24 @@
 # ─────────────────────────────────────────────────────────────
-#  .github/workflows/docker-build-scan.yml
-#  Workflow 3 — Build Docker + Scan Sécurité Container 
+# .github/workflows/docker-build-scan.yml
+# Workflow 3 — Build Docker + Scan Sécurité Container
 # ─────────────────────────────────────────────────────────────
-
 name: "Docker — Build & Scan Sécurité"
 
 on:
   workflow_run:
     workflows: ["CI — Tests & Sécurité Code"]
-    types:
-      - completed
-    branches:
-      - main
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
-  # ══════════════════════════════════════════════════════
-  #  JOB 1 : Build de l'image Docker
-  # ══════════════════════════════════════════════════════
+
   docker-build:
     name: "Build Image Docker"
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
-
     outputs:
       image-tag: ${{ steps.meta.outputs.tags }}
-
     steps:
       - name: "Checkout du code"
         uses: actions/checkout@v4
@@ -61,24 +54,14 @@ jobs:
           cache-to: type=gha,mode=max
           load: true
 
-      - name: "Informations image Docker"
-        run: |
-          echo "Image buildée avec succès ✅"
-          docker images | grep ids-api
-
-  # ══════════════════════════════════════════════════════
-  #  JOB 2 : Scan de sécurité avec Trivy
-  # ══════════════════════════════════════════════════════
   trivy-scan:
     name: "Scan Sécurité — Trivy (CVE)"
     runs-on: ubuntu-latest
     needs: docker-build
-    # ✅ CORRECTION : permissions nécessaires pour upload SARIF
     permissions:
       security-events: write
       contents: read
       actions: read
-
     steps:
       - name: "Checkout du code"
         uses: actions/checkout@v4
@@ -89,7 +72,7 @@ jobs:
       - name: "Build image pour scan"
         run: docker build -t ids-api:scan .
 
-      - name: "Scan Trivy — Vulnérabilités container"
+      - name: "Scan Trivy — Rapport SARIF"
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: "ids-api:scan"
@@ -98,15 +81,15 @@ jobs:
           severity: "CRITICAL,HIGH"
           exit-code: "0"
 
-      - name: "Rapport Trivy — Texte"
+      # CORRECTION : scan en mode table avec exit-code 1 → bloque si CRITICAL trouvée
+      - name: "Scan Trivy — Gate sécurité CRITICAL"
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: "ids-api:scan"
           format: "table"
-          severity: "CRITICAL,HIGH"
-          exit-code: "0"
+          severity: "CRITICAL"
+          exit-code: "1"
 
-      # ✅ CORRECTION : upload SARIF fonctionne maintenant
       - name: "Upload résultats vers GitHub Security"
         uses: github/codeql-action/upload-sarif@v3
         if: always()
@@ -121,14 +104,10 @@ jobs:
           path: trivy-results.sarif
           retention-days: 30
 
-  # ══════════════════════════════════════════════════════
-  #  JOB 3 : Push de l'image si scan OK
-  # ══════════════════════════════════════════════════════
   docker-push:
     name: "Push Image Docker Hub"
     runs-on: ubuntu-latest
     needs: [docker-build, trivy-scan]
-
     steps:
       - name: "Checkout du code"
         uses: actions/checkout@v4
@@ -154,11 +133,3 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
-
-      - name: "Image pushée avec succès"
-        run: |
-          echo "════════════════════════════════════"
-          echo "Image pushée sur Docker Hub ✅"
-          echo "Tag latest : ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:latest"
-          echo "Tag commit : ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.sha }}"
-          echo "════════════════════════════════════"
