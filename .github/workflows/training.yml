@@ -1,8 +1,7 @@
 # ─────────────────────────────────────────────────────────────
-#  .github/workflows/training.yml
-#  Workflow 2 — Entraînement ML Automatisé (VERSION CORRIGÉE)
+# .github/workflows/training.yml
+# Workflow 2 — Entraînement ML Automatisé
 # ─────────────────────────────────────────────────────────────
-
 name: "Training — Entraînement ML"
 
 on:
@@ -13,29 +12,22 @@ on:
         required: true
         default: "false"
         type: choice
-        options:
-          - "true"
-          - "false"
+        options: ["true", "false"]
       experiment_name:
         description: "Nom de l'expérience MLflow"
         required: false
         default: "IDS_CICIDS2017"
-
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - "Model/src/models/**"
       - "params.yaml"
 
 jobs:
-  # ══════════════════════════════════════════════════════
-  #  JOB 1 : Préparation des données
-  # ══════════════════════════════════════════════════════
+
   prepare-data:
     name: "Préparation des données"
     runs-on: ubuntu-latest
-
     steps:
       - name: "Checkout du code"
         uses: actions/checkout@v4
@@ -58,15 +50,11 @@ jobs:
           dvc remote modify dagshub --local user ${{ secrets.DAGSHUB_USERNAME }}
           dvc remote modify dagshub --local password ${{ secrets.DAGSHUB_TOKEN }}
 
-      # ✅ FIX #4 : suppression de "dvc checkout --force" redondant
       - name: "DVC Pull — Récupération données"
-        run: |
-          dvc pull
+        run: dvc pull
 
       - name: "Vérification des données"
         run: |
-          echo "Vérification Model/data/processed/"
-          ls -la Model/data/processed/ || echo "Dossier vide"
           python -c "
           import numpy as np
           from pathlib import Path
@@ -78,15 +66,14 @@ jobs:
           print('Données prêtes ✅')
           "
 
-      # ✅ FIX #5 : preprocessing lancé aussi sur push
-      - name: "Preprocessing (si demandé ou push)"
-        if: ${{ github.event.inputs.run_preprocessing == 'true' || github.event_name == 'push' }}
+      # CORRECTION : vérifier si les .npy existent déjà avant de lancer preprocessing
+      - name: "Preprocessing (si demandé ou si .npy absents)"
+        if: ${{ github.event.inputs.run_preprocessing == 'true' }}
         run: |
           echo "Lancement du preprocessing complet..."
           python Model/src/data/preprocess.py
           python Model/src/data/balance.py
 
-      # ✅ FIX #6 : retention-days 1 → 3
       - name: "Upload données preprocessées"
         uses: actions/upload-artifact@v4
         with:
@@ -94,14 +81,10 @@ jobs:
           path: Model/data/processed/
           retention-days: 3
 
-  # ══════════════════════════════════════════════════════
-  #  JOB 2 : Entraînement + Évaluation
-  # ══════════════════════════════════════════════════════
   train-evaluate:
     name: "Entraînement XGBoost + Évaluation"
     runs-on: ubuntu-latest
     needs: prepare-data
-
     steps:
       - name: "Checkout du code"
         uses: actions/checkout@v4
@@ -124,43 +107,13 @@ jobs:
           name: processed-data
           path: Model/data/processed/
 
-      # ✅ Configuration MLflow avec SQLite local
-      - name: "Configuration MLflow"
+      # CORRECTION : MLflow tracké vers DagsHub pour persistance réelle des runs
+      - name: "Configuration MLflow → DagsHub"
         run: |
-          echo "MLFLOW_TRACKING_URI=sqlite:///mlflow.db" >> $GITHUB_ENV
+          echo "MLFLOW_TRACKING_URI=https://dagshub.com/${{ secrets.DAGSHUB_USERNAME }}/SecuredMLOps.mlflow" >> $GITHUB_ENV
+          echo "MLFLOW_TRACKING_USERNAME=${{ secrets.DAGSHUB_USERNAME }}" >> $GITHUB_ENV
+          echo "MLFLOW_TRACKING_PASSWORD=${{ secrets.DAGSHUB_TOKEN }}" >> $GITHUB_ENV
 
-      # ✅ Migration du schéma MLflow (nécessaire pour SQLite)
-      - name: "Migrer le schéma MLflow"
-        run: |
-          pip install mlflow
-          mlflow db upgrade sqlite:///mlflow.db
-
-      # ✅ Démarrer MLflow server en arrière-plan
-      - name: "Démarrage MLflow local"
-        run: |
-          rm -f mlflow.db
-      
-          nohup mlflow ui \
-            --backend-store-uri sqlite:///mlflow.db \
-            --host 127.0.0.1 \
-            --port 5000 > mlflow.log 2>&1 &
-      
-          echo "Attente démarrage MLflow..."
-          for i in 1 2 3 4 5 6 7 8 9 10; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5000 || true)
-            if [ "$code" = "200" ] || [ "$code" = "301" ] || [ "$code" = "302" ]; then
-              echo "MLflow prêt"
-              exit 0
-            fi
-            sleep 3
-          done
-      
-          echo "MLflow n'a pas démarré correctement"
-          cat mlflow.log || true
-          exit 1
-
-      # ✅ FIX #2 : experiment_name transmis via env var au script train.py
-      #             train.py lit maintenant os.environ.get("MLFLOW_EXPERIMENT_NAME")
       - name: "Entraînement XGBoost"
         env:
           MLFLOW_EXPERIMENT_NAME: ${{ github.event.inputs.experiment_name || 'IDS_CICIDS2017' }}
@@ -172,43 +125,29 @@ jobs:
       - name: "Évaluation du modèle"
         run: python Model/src/models/evaluate.py
 
-      # ✅ FIX #3 : roc_auc_score corrigé pour multiclasse CICIDS2017
-      #             (la logique est maintenant dans train.py → compute_metrics)
       - name: "Security Gate — Validation métriques ML"
         run: |
           python -c "
-          import os
-          import numpy as np
-          import joblib
+          import os, numpy as np, joblib
           from sklearn.metrics import f1_score, roc_auc_score
-
           print('Vérification des seuils de performance...')
-
-          model  = joblib.load('Model/models/saved/xgboost_ids.joblib')
+          model = joblib.load('Model/models/saved/xgboost_ids.joblib')
           X_test = np.load('Model/data/processed/X_test.npy')
           y_test = np.load('Model/data/processed/y_test.npy')
-
-          y_pred  = model.predict(X_test)
+          y_pred = model.predict(X_test)
           y_proba = model.predict_proba(X_test)
-
           f1 = f1_score(y_test, y_pred, average='weighted')
-
-          # ✅ FIX : multiclasse OVR pour CICIDS2017
           n_classes = len(np.unique(y_test))
           if n_classes == 2:
               auc = roc_auc_score(y_test, y_proba[:, 1])
           else:
               auc = roc_auc_score(y_test, y_proba, multi_class='ovr', average='weighted')
-
-          print(f'F1-Score  : {f1:.4f}')
-          print(f'ROC-AUC   : {auc:.4f}')
-          print(f'Nb classes: {n_classes}')
-
+          print(f'F1-Score : {f1:.4f}')
+          print(f'ROC-AUC  : {auc:.4f}')
           if f1 < 0.97:
               raise ValueError(f'F1-Score insuffisant : {f1:.4f} < 0.97 — PIPELINE BLOQUÉ')
           if auc < 0.99:
               raise ValueError(f'ROC-AUC insuffisant : {auc:.4f} < 0.99 — PIPELINE BLOQUÉ')
-
           print('Toutes les métriques valident les seuils ✅')
           "
 
