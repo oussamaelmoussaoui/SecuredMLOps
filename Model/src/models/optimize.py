@@ -127,7 +127,7 @@ def run_optimization(params: dict):
         best_params = study.best_params
         best_value  = study.best_value
 
-        logger.info(f"\n── Meilleurs hyperparamètres trouvés ──")
+        logger.info("\n── Meilleurs hyperparamètres trouvés ──")
         for k, v in best_params.items():
             logger.info(f"  {k:<25} : {v}")
         logger.info(f"\n  Meilleur F1-Score : {best_value:.6f}")

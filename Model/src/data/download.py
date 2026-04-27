@@ -11,9 +11,7 @@
 #  (le dataset nécessite une inscription sur le site UNB).
 # ─────────────────────────────────────────
 
-import os
 import sys
-import zipfile
 import logging
 from pathlib import Path
 

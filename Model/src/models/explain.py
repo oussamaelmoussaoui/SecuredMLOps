@@ -163,7 +163,7 @@ def main():
         for i, (feat, val) in enumerate(top_features, 1):
             f.write(f"{i:>2}. {feat:<35} {val:.6f}\n")
 
-    logger.info(f"\nTop 5 features les plus importantes :")
+    logger.info("\nTop 5 features les plus importantes :")
     for feat, val in top_features[:5]:
         logger.info(f"  {feat:<35} SHAP={val:.4f}")
 
@@ -179,7 +179,7 @@ def main():
         mlflow.log_artifact(str(report_path))
         logger.info("Artifacts SHAP loggés dans MLflow")
 
-    logger.info(f"\n✅ Explicabilité SHAP terminée !")
+    logger.info("\n✅ Explicabilité SHAP terminée !")
     logger.info(f"   Visualisations dans : {DOCS_DIR}")
     logger.info("   Prochaine étape :")
     logger.info("   > python Model/src/api/main.py")
