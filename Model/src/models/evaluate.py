@@ -18,13 +18,12 @@ from pathlib import Path
 
 import joblib
 import numpy as np
-import yaml
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sklearn.metrics import (
-    classification_report, confusion_matrix,
+    classification_report,
     f1_score, precision_score, recall_score,
     roc_auc_score, roc_curve, precision_recall_curve,
     average_precision_score
@@ -100,9 +99,12 @@ def generate_html_report(metrics: dict, report_str: str, save_path: Path):
     rows = ""
     for k, v in metrics.items():
         status_color = ""
-        if k == "f1_score" and v > 0.97:     status_color = "background:#eafaf1"
-        elif k == "roc_auc" and v > 0.99:    status_color = "background:#eafaf1"
-        elif k == "false_positive_rate" and v < 0.05: status_color = "background:#eafaf1"
+        if k == "f1_score" and v > 0.97:     
+            status_color = "background:#eafaf1"
+        elif k == "roc_auc" and v > 0.99:    
+            status_color = "background:#eafaf1"
+        elif k == "false_positive_rate" and v < 0.05: 
+            status_color = "background:#eafaf1"
         rows += f"<tr style='{status_color}'><td><b>{k}</b></td><td>{v:.6f}</td></tr>"
 
     html = f"""<!DOCTYPE html>

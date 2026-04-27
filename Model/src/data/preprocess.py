@@ -17,8 +17,6 @@
 #           Model/data/processed/scaler.joblib
 # ─────────────────────────────────────────
 
-import os
-import glob
 import logging
 import warnings
 from pathlib import Path
@@ -29,7 +27,6 @@ import joblib
 import yaml
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.feature_selection import VarianceThreshold
 
 warnings.filterwarnings("ignore")
 logging.basicConfig(
@@ -81,7 +78,6 @@ def clean_single_df(df: pd.DataFrame, params: dict) -> pd.DataFrame:
 
     # Convertir toutes les colonnes numériques en float32 (économise 50% RAM)
     num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    label_cols = [label_col] if label_col in num_cols else []
     feat_cols  = [c for c in num_cols if c != label_col]
     df[feat_cols] = df[feat_cols].astype(np.float32)
 
@@ -176,6 +172,8 @@ def scale_features(X_train, X_val, X_test):
     scaler_path = PROCESSED_DIR / "scaler.joblib"
     joblib.dump(scaler, scaler_path)
     logger.info(f"Scaler sauvegardé : {scaler_path}")
+    
+    assert X_test_sc.shape == X_test.shape
 
     return X_train_sc, X_val_sc, X_test_sc, scaler
 

@@ -271,7 +271,7 @@ def train_xgboost(X_train, y_train, X_val, y_val,
 
         run_id = run.info.run_id
         logger.info(f"MLflow Run ID : {run_id}")
-        logger.info(f"Voir l'expérience : http://localhost:5000/#/experiments")
+        logger.info("Voir l'expérience : http://localhost:5000/#/experiments")
 
         return model, test_metrics, run_id
 

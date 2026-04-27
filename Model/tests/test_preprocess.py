@@ -195,11 +195,10 @@ class TestScaling:
         from sklearn.preprocessing import StandardScaler
 
         X_train = np.random.randn(100, 5)
-        X_test  = np.random.randn(20, 5) + 10  # Distribution différente
+        #X_test  = np.random.randn(20, 5) + 10  # Distribution différente
 
         scaler = StandardScaler()
         X_train_sc = scaler.fit_transform(X_train)
-        X_test_sc  = scaler.transform(X_test)  # transform only — pas fit
 
         # Train doit être centré autour de 0
         assert abs(X_train_sc.mean()) < 0.1, "Train mal normalisé"
