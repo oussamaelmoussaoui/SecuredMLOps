@@ -1,0 +1,188 @@
+# ─────────────────────────────────────────────────────────────
+# .github/workflows/deploy-production.yml
+# Workflow 5 — Déploiement Production Contrôlé
+# ─────────────────────────────────────────────────────────────
+
+name: "Deploy Production"
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag immuable de l'image Docker à déployer. Exemple : sha-a1b2c3d"
+        required: true
+        default: "sha-a1b2c3d"
+      confirm_deploy:
+        description: "Confirmer le déploiement en production ?"
+        required: true
+        type: choice
+        options:
+          - "OUI_JE_CONFIRME"
+          - "NON"
+        default: "NON"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+
+  verify-confirmation:
+    name: "Vérification Confirmation"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "Vérifier la confirmation"
+        run: |
+          if [ "${{ github.event.inputs.confirm_deploy }}" != "OUI_JE_CONFIRME" ]; then
+            echo "Déploiement annulé : confirmation non reçue."
+            echo "Relancer avec confirm_deploy = OUI_JE_CONFIRME."
+            exit 1
+          fi
+
+          if [ "${{ github.event.inputs.image_tag }}" = "latest" ]; then
+            echo "Le tag latest est interdit en production."
+            echo "Utilisez un tag immuable, par exemple : sha-a1b2c3d."
+            exit 1
+          fi
+
+          echo "Confirmation reçue."
+          echo "Image à déployer : ${{ github.event.inputs.image_tag }}"
+
+
+  deploy-production:
+    name: "Déploiement Production"
+    runs-on: ubuntu-latest
+    needs: verify-confirmation
+
+    environment:
+      name: production
+      url: http://localhost:8000
+
+    steps:
+      - name: "Checkout du code"
+        uses: actions/checkout@v4
+
+      - name: "Informations déploiement"
+        run: |
+          echo "════════════════════════════════════"
+          echo " DÉPLOIEMENT PRODUCTION"
+          echo "════════════════════════════════════"
+          echo "Image        : ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.event.inputs.image_tag }}"
+          echo "Commit Git   : ${{ github.sha }}"
+          echo "Déclenché par: ${{ github.actor }}"
+          echo "Date         : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "════════════════════════════════════"
+
+      - name: "Login Docker Hub"
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: "Pull image production"
+        run: |
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.event.inputs.image_tag }}"
+          docker pull "$IMAGE"
+
+      - name: "Déploiement nouvelle version"
+        run: |
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.event.inputs.image_tag }}"
+
+          docker stop ids-api-production 2>/dev/null || true
+          docker rm ids-api-production 2>/dev/null || true
+
+          docker run -d \
+            --name ids-api-production \
+            -p 8000:8000 \
+            --restart always \
+            --label "environment=production" \
+            --label "deployed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --label "image_tag=${{ github.event.inputs.image_tag }}" \
+            --label "commit=${{ github.sha }}" \
+            "$IMAGE"
+
+          echo "Nouvelle version démarrée."
+
+      - name: "Smoke Tests Production"
+        run: |
+          set -e
+
+          echo "Attente démarrage API production..."
+          for i in 1 2 3 4 5 6; do
+            HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health || echo "000")
+            echo "Tentative $i/6 — HTTP $HEALTH"
+
+            if [ "$HEALTH" = "200" ]; then
+              break
+            fi
+
+            sleep 10
+          done
+
+          if [ "$HEALTH" != "200" ]; then
+            echo "Health check échoué."
+            docker logs ids-api-production || true
+            docker stop ids-api-production || true
+            exit 1
+          fi
+
+          echo "Test /health"
+          curl -s -f http://localhost:8000/health > health.json
+          cat health.json
+
+          echo ""
+          echo "Test /model/info"
+          curl -s -f http://localhost:8000/model/info > model_info.json
+          cat model_info.json
+
+          echo ""
+          echo "Test latence /health"
+          TIME=$(curl -s -o /dev/null -w "%{time_total}" http://localhost:8000/health)
+          echo "Latence health : ${TIME}s"
+
+          python - <<PY
+          time_value = float("${TIME}")
+          if time_value > 0.5:
+              raise SystemExit(f"Latence trop élevée : {time_value}s > 0.5s")
+          print("Latence valide")
+          PY
+
+          echo "Production opérationnelle."
+
+      - name: "Enregistrer résumé déploiement"
+        run: |
+          mkdir -p deployment-summary
+
+          cat > deployment-summary/production-deployment.txt <<EOF
+          Déploiement production SecuredMLOps
+          Image: ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.event.inputs.image_tag }}
+          Commit: ${{ github.sha }}
+          Déployé par: ${{ github.actor }}
+          Date UTC: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+
+          cat deployment-summary/production-deployment.txt
+
+      - name: "Upload résumé déploiement"
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-deployment-summary
+          path: deployment-summary/
+          retention-days: 30
+
+      - name: "Logs Docker si échec"
+        if: failure()
+        run: docker logs ids-api-production || true
+
+      - name: "Résumé final"
+        if: success()
+        run: |
+          echo "════════════════════════════════════"
+          echo " DÉPLOIEMENT PRODUCTION RÉUSSI"
+          echo "════════════════════════════════════"
+          echo "Image : ids-api:${{ github.event.inputs.image_tag }}"
+          echo "Par   : ${{ github.actor }}"
+          echo "Date  : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "════════════════════════════════════"

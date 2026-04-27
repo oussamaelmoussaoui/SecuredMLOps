@@ -1,0 +1,172 @@
+# ─────────────────────────────────────────────────────────────
+# .github/workflows/rollback.yml
+# Workflow 6 — Rollback Manuel d'Urgence
+# ─────────────────────────────────────────────────────────────
+
+name: "Rollback — Retour Arrière d'Urgence"
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollback_version:
+        description: "Tag Docker exact vers lequel revenir. Exemple : sha-a1b2c3d"
+        required: true
+        default: "sha-a1b2c3d"
+      reason:
+        description: "Raison du rollback pour les logs d'audit"
+        required: true
+        default: "Incident en production"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+
+  rollback:
+    name: "Rollback Production"
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production
+      url: http://localhost:8000
+
+    steps:
+      - name: "Checkout du code"
+        uses: actions/checkout@v4
+
+      - name: "Validation paramètres rollback"
+        run: |
+          if [ -z "${{ github.event.inputs.reason }}" ]; then
+            echo "La raison du rollback est obligatoire."
+            exit 1
+          fi
+
+          if [ "${{ github.event.inputs.rollback_version }}" = "latest" ]; then
+            echo "Rollback vers latest interdit."
+            echo "Utilisez un tag immuable, par exemple : sha-a1b2c3d."
+            exit 1
+          fi
+
+          echo "Paramètres rollback valides."
+
+      - name: "Informations rollback"
+        run: |
+          echo "════════════════════════════════════"
+          echo " ROLLBACK D'URGENCE"
+          echo "════════════════════════════════════"
+          echo "Version cible : ${{ github.event.inputs.rollback_version }}"
+          echo "Raison        : ${{ github.event.inputs.reason }}"
+          echo "Déclenché par : ${{ github.actor }}"
+          echo "Date UTC      : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "════════════════════════════════════"
+
+      - name: "Login Docker Hub"
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: "Pull image rollback"
+        run: |
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.event.inputs.rollback_version }}"
+          echo "Récupération image : $IMAGE"
+          docker pull "$IMAGE"
+
+      - name: "Arrêt version actuelle"
+        run: |
+          docker stop ids-api-production 2>/dev/null || true
+          docker rm ids-api-production 2>/dev/null || true
+
+      - name: "Déploiement version rollback"
+        run: |
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.event.inputs.rollback_version }}"
+
+          docker run -d \
+            --name ids-api-production \
+            -p 8000:8000 \
+            --restart always \
+            --label "rollback=true" \
+            --label "rollback_version=${{ github.event.inputs.rollback_version }}" \
+            --label "rollback_reason=${{ github.event.inputs.reason }}" \
+            --label "rolled_back_by=${{ github.actor }}" \
+            --label "rolled_back_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            "$IMAGE"
+
+          echo "Version rollback démarrée."
+
+      - name: "Vérification rollback"
+        run: |
+          set -e
+
+          echo "Attente démarrage API rollback..."
+          for i in 1 2 3 4 5 6; do
+            HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health || echo "000")
+            echo "Tentative $i/6 — HTTP $HEALTH"
+
+            if [ "$HEALTH" = "200" ]; then
+              break
+            fi
+
+            sleep 10
+          done
+
+          if [ "$HEALTH" != "200" ]; then
+            echo "Rollback échoué : HTTP $HEALTH"
+            echo "INTERVENTION MANUELLE REQUISE"
+            docker logs ids-api-production || true
+            exit 1
+          fi
+
+          echo "Test /health"
+          curl -s -f http://localhost:8000/health > health.json
+          cat health.json
+
+          echo ""
+          echo "Test /model/info"
+          curl -s -f http://localhost:8000/model/info > model_info.json
+          cat model_info.json
+
+          echo ""
+          echo "Rollback validé."
+
+      - name: "Enregistrer rapport rollback"
+        if: always()
+        run: |
+          mkdir -p rollback-summary
+
+          cat > rollback-summary/rollback-report.txt <<EOF
+          Rollback SecuredMLOps
+          Version restaurée: ${{ github.event.inputs.rollback_version }}
+          Raison: ${{ github.event.inputs.reason }}
+          Déclenché par: ${{ github.actor }}
+          Date UTC: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          Résultat du job: ${{ job.status }}
+          EOF
+
+          cat rollback-summary/rollback-report.txt
+
+      - name: "Upload rapport rollback"
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rollback-report
+          path: rollback-summary/
+          retention-days: 30
+
+      - name: "Logs Docker si échec"
+        if: failure()
+        run: docker logs ids-api-production || true
+
+      - name: "Résumé rollback"
+        if: always()
+        run: |
+          echo "════════════════════════════════════"
+          echo " ROLLBACK TERMINÉ"
+          echo "════════════════════════════════════"
+          echo "Version restaurée : ${{ github.event.inputs.rollback_version }}"
+          echo "Raison            : ${{ github.event.inputs.reason }}"
+          echo "Par               : ${{ github.actor }}"
+          echo "Heure UTC         : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "Action requise    : analyser l'incident avant un nouveau déploiement."
+          echo "════════════════════════════════════"
