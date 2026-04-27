@@ -1,0 +1,140 @@
+# ─────────────────────────────────────────────────────────────
+# .github/workflows/docker-build-scan.yml
+# Workflow 3 — Build Docker + Scan Sécurité Container
+# ─────────────────────────────────────────────────────────────
+
+name: "Docker — Build & Scan Sécurité"
+
+on:
+  workflow_run:
+    workflows: ["CI — Tests & Sécurité Code"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+
+  docker-build-scan-push:
+    name: "Build, Scan Trivy & Push Docker Hub"
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
+    steps:
+      - name: "Checkout du code"
+        uses: actions/checkout@v4
+
+      - name: "Définir tags Docker"
+        id: vars
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "image=${{ secrets.DOCKERHUB_USERNAME }}/ids-api" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=sha-$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: "Setup Python 3.10 pour DVC"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: "Installer DVC + DagsHub"
+        run: |
+          python -m pip install --upgrade pip
+          pip install dvc dagshub
+
+      - name: "Configurer DVC — DagsHub"
+        run: |
+          dvc remote modify dagshub --local auth basic
+          dvc remote modify dagshub --local user "${{ secrets.DAGSHUB_USERNAME }}"
+          dvc remote modify dagshub --local password "${{ secrets.DAGSHUB_TOKEN }}"
+
+      - name: "Récupérer le modèle versionné"
+        run: |
+          echo "Récupération du modèle depuis DVC/DagsHub..."
+          dvc pull Model/models/saved/ || dvc pull || true
+
+          if [ ! -f "Model/models/saved/xgboost_ids.joblib" ]; then
+            echo "Modèle manquant : Model/models/saved/xgboost_ids.joblib"
+            echo "Lancez training.yml ou versionnez le modèle avec DVC avant de builder l'image."
+            exit 1
+          fi
+
+          echo "Modèle trouvé :"
+          ls -lh Model/models/saved/
+
+      - name: "Login Docker Hub"
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: "Setup Docker BuildKit"
+        uses: docker/setup-buildx-action@v3
+
+      - name: "Build image Docker locale"
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          dockerfile: Dockerfile
+          push: false
+          load: true
+          tags: |
+            ${{ steps.vars.outputs.image }}:latest
+            ${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.sha_tag }}
+          labels: |
+            org.opencontainers.image.title=SecuredMLOps IDS API
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.vars.outputs.sha_tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: "Scan Trivy — Rapport SARIF"
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.sha_tag }}"
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+
+      - name: "Scan Trivy — Gate sécurité CRITICAL"
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.sha_tag }}"
+          format: "table"
+          severity: "CRITICAL"
+          exit-code: "1"
+
+      - name: "Upload résultats Trivy vers GitHub Security"
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-results.sarif"
+
+      - name: "Upload rapport Trivy"
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-security-report
+          path: trivy-results.sarif
+          retention-days: 30
+
+      - name: "Push image Docker validée"
+        run: |
+          docker push "${{ steps.vars.outputs.image }}:latest"
+          docker push "${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.sha_tag }}"
+
+      - name: "Résumé Docker"
+        run: |
+          echo "════════════════════════════════════"
+          echo " IMAGE DOCKER VALIDÉE ET PUSHÉE"
+          echo "════════════════════════════════════"
+          echo "Image latest : ${{ steps.vars.outputs.image }}:latest"
+          echo "Image SHA    : ${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.sha_tag }}"
+          echo "Commit       : ${{ github.sha }}"
+          echo "════════════════════════════════════"
