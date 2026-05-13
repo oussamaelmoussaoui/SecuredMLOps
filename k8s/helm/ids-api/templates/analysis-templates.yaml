@@ -1,0 +1,48 @@
+{{- if and (eq .Values.deploymentStrategy "canary") .Values.canary.analysis.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: success-rate
+  labels:
+    {{- include "ids-api.labels" . | nindent 4 }}
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: success-rate
+      interval: 30s
+      count: 4
+      successCondition: result[0] >= {{ .Values.canary.analysis.successRate }}
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus-server.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(http_requests_total{service="{{ "{{" }}args.service-name{{ "}}" }}", code!~"5.."}[1m]))
+            /
+            sum(rate(http_requests_total{service="{{ "{{" }}args.service-name{{ "}}" }}"}[1m]))
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: latency-p95
+  labels:
+    {{- include "ids-api.labels" . | nindent 4 }}
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: latency-p95
+      interval: 30s
+      count: 4
+      successCondition: result[0] <= {{ .Values.canary.analysis.latencyP95Seconds }}
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus-server.monitoring.svc.cluster.local:9090
+          query: |
+            histogram_quantile(0.95,
+              sum(rate(http_request_duration_seconds_bucket{service="{{ "{{" }}args.service-name{{ "}}" }}"}[1m])) by (le)
+            )
+{{- end }}

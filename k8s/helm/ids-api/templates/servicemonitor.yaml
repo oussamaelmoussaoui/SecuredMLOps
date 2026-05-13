@@ -1,0 +1,17 @@
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+# Nécessite Prometheus Operator installé
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "ids-api.fullname" . }}
+  labels:
+    {{- include "ids-api.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "ids-api.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: {{ .Values.monitoring.serviceMonitor.path }}
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+{{- end }}

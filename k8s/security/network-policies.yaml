@@ -1,0 +1,94 @@
+# ─────────────────────────────────────────
+#  NetworkPolicies — Zero Trust Network
+#
+#  Approche DevSecOps :
+#  1. Default DENY all (ingress + egress)
+#  2. Autorisations explicites uniquement
+# ─────────────────────────────────────────
+
+# ─── 1. DEFAULT DENY pour tout le namespace ───
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: securedmlops
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# ─── 2. Autoriser le trafic entrant vers l'IDS API ───
+# Source : ingress-nginx controller uniquement
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-ids-api
+  namespace: securedmlops
+spec:
+  podSelector:
+    matchLabels:
+      app: ids-api
+  policyTypes:
+    - Ingress
+  ingress:
+    # Trafic depuis le contrôleur Ingress NGINX
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+    # Trafic depuis Prometheus (monitoring Phase 6)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8000
+
+---
+# ─── 3. Autoriser l'egress de l'IDS API ───
+# Destinations : DNS + MLflow interne + HTTPS sortant (DagsHub)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-from-ids-api
+  namespace: securedmlops
+spec:
+  podSelector:
+    matchLabels:
+      app: ids-api
+  policyTypes:
+    - Egress
+  egress:
+    # DNS (CoreDNS)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # MLflow interne au namespace
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mlflow
+      ports:
+        - protocol: TCP
+          port: 5000
+    # HTTPS sortant pour DagsHub / pypi (à restreindre par IP en prod)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443

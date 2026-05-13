@@ -1,0 +1,40 @@
+# ─────────────────────────────────────────
+#  .gitignore — k8s/
+#  Empêche le commit accidentel de secrets
+# ─────────────────────────────────────────
+
+# Secrets locaux générés
+*-secrets-real.yaml
+*-secret-prod.yaml
+secrets.local.yaml
+
+# Override values locaux (peuvent contenir des tokens)
+values-local.yaml
+values-*.local.yaml
+
+# Fichiers .env utilisés par les scripts
+.env
+.env.*
+!.env.example
+
+# Kubeconfig
+kubeconfig
+*.kubeconfig
+
+# Certs / clés
+*.pem
+*.key
+*.crt
+*.p12
+
+# Helm
+charts/
+*.tgz
+
+# ArgoCD secrets exportés
+argocd-*.yaml
+!argocd/application.yaml
+!argocd/project.yaml
+
+# Cache local
+.cache/

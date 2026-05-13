@@ -1,0 +1,55 @@
+{{- if eq .Values.deploymentStrategy "canary" }}
+# ─── Services pour Argo Rollouts ───
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ids-api.fullname" . }}-stable
+  labels:
+    {{- include "ids-api.labels" . | nindent 4 }}
+    role: stable
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "ids-api.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ids-api.fullname" . }}-canary
+  labels:
+    {{- include "ids-api.labels" . | nindent 4 }}
+    role: canary
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "ids-api.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+
+{{- else }}
+# ─── Service unique (rolling) ───
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ids-api.fullname" . }}
+  labels:
+    {{- include "ids-api.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "ids-api.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+{{- end }}

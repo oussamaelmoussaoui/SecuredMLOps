@@ -1,0 +1,61 @@
+# ─────────────────────────────────────────
+#  AnalysisTemplates — vérifications automatiques
+#
+#  À chaque étape du Canary, Argo Rollouts exécute
+#  ces analyses. Si elles échouent → rollback auto.
+#
+#  Prérequis : Prometheus déployé (Phase 6).
+# ─────────────────────────────────────────
+
+# ─── 1. Taux de succès HTTP (>= 95%) ───
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: success-rate
+  namespace: securedmlops
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: success-rate
+      interval: 30s
+      count: 4              # 4 mesures sur ~2min
+      successCondition: result[0] >= 0.95
+      failureLimit: 2       # 2 échecs → rollback
+      provider:
+        prometheus:
+          address: http://prometheus-server.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(
+              http_requests_total{service="{{args.service-name}}", code!~"5.."}[1m]
+            ))
+            /
+            sum(rate(
+              http_requests_total{service="{{args.service-name}}"}[1m]
+            ))
+
+---
+# ─── 2. Latence p95 (< 100ms — aligné avec params.yaml) ───
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: latency-p95
+  namespace: securedmlops
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: latency-p95
+      interval: 30s
+      count: 4
+      successCondition: result[0] <= 0.1   # 100ms en secondes
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus-server.monitoring.svc.cluster.local:9090
+          query: |
+            histogram_quantile(0.95,
+              sum(rate(
+                http_request_duration_seconds_bucket{service="{{args.service-name}}"}[1m]
+              )) by (le)
+            )

@@ -1,0 +1,45 @@
+# ─────────────────────────────────────────
+#  Services Stable & Canary
+#
+#  Argo Rollouts gère dynamiquement les sélecteurs
+#  entre ces deux services pour router le trafic.
+# ─────────────────────────────────────────
+
+# ─── Service Stable (version actuelle en prod) ───
+apiVersion: v1
+kind: Service
+metadata:
+  name: ids-api-stable
+  namespace: securedmlops
+  labels:
+    app: ids-api
+    role: stable
+spec:
+  type: ClusterIP
+  selector:
+    app: ids-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      protocol: TCP
+
+---
+# ─── Service Canary (nouvelle version en test) ───
+apiVersion: v1
+kind: Service
+metadata:
+  name: ids-api-canary
+  namespace: securedmlops
+  labels:
+    app: ids-api
+    role: canary
+spec:
+  type: ClusterIP
+  selector:
+    app: ids-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      protocol: TCP

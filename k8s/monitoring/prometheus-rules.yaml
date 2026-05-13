@@ -1,0 +1,85 @@
+# ─────────────────────────────────────────
+#  PrometheusRule — alertes SLO
+#
+#  Surveille en continu :
+#  - Latence p95 > 100ms (cible params.yaml)
+#  - Taux d'erreur > 5%
+#  - Pods non disponibles
+#  - False Positive Rate du modèle > 5%
+# ─────────────────────────────────────────
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ids-api-alerts
+  namespace: securedmlops
+  labels:
+    app: ids-api
+    role: alert-rules
+spec:
+  groups:
+    - name: ids-api.slo
+      interval: 30s
+      rules:
+
+        # ─── Latence p95 ─────────────────
+        - alert: IDSAPIHighLatency
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_request_duration_seconds_bucket{job="ids-api"}[5m])) by (le)
+            ) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+            component: api
+          annotations:
+            summary: "Latence p95 trop élevée sur IDS API"
+            description: "Latence p95 = {{ $value }}s (seuil: 100ms)"
+
+        # ─── Taux d'erreur ───────────────
+        - alert: IDSAPIHighErrorRate
+          expr: |
+            sum(rate(http_requests_total{job="ids-api", code=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{job="ids-api"}[5m])) > 0.05
+          for: 3m
+          labels:
+            severity: critical
+            component: api
+          annotations:
+            summary: "Taux d'erreur élevé sur IDS API"
+            description: "Taux d'erreur = {{ $value | humanizePercentage }}"
+
+        # ─── Pods down ───────────────────
+        - alert: IDSAPIPodsDown
+          expr: |
+            kube_deployment_status_replicas_available{deployment="ids-api"} < 2
+          for: 2m
+          labels:
+            severity: critical
+            component: api
+          annotations:
+            summary: "Moins de 2 pods IDS API disponibles"
+            description: "Pods disponibles : {{ $value }}"
+
+        # ─── False Positive Rate (métier) ───
+        # Nécessite une métrique custom exposée par l'API
+        - alert: IDSModelHighFalsePositiveRate
+          expr: ids_model_false_positive_rate > 0.05
+          for: 10m
+          labels:
+            severity: warning
+            component: model
+          annotations:
+            summary: "FPR du modèle au-dessus du seuil"
+            description: "FPR = {{ $value }} (seuil: 5%)"
+
+        # ─── Data drift (Phase 6 — Evidently) ───
+        - alert: IDSDataDriftDetected
+          expr: ids_data_drift_score > 0.15
+          for: 5m
+          labels:
+            severity: warning
+            component: model
+          annotations:
+            summary: "Drift de données détecté"
+            description: "Drift score = {{ $value }} (seuil: 0.15)"

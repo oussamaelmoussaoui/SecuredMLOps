@@ -1,0 +1,74 @@
+# ─────────────────────────────────────────
+#  ArgoCD Application — GitOps
+#
+#  Principe : ArgoCD surveille le repo Git en
+#  permanence et synchronise automatiquement
+#  l'état du cluster avec le code.
+#
+#  Tout commit dans k8s/ → déploiement automatique
+#  via Argo Rollouts (Canary progressif).
+#
+#  ⚠️ Prérequis :
+#  kubectl create namespace argocd
+#  kubectl apply -n argocd -f \
+#    https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+# ─────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ids-api
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: securedmlops
+spec:
+  project: securedmlops
+
+  # ─── Source : ton repo Git ────────────────
+  source:
+    repoURL: https://github.com/oussamaelmoussaoui/SecuredMLOps.git
+    targetRevision: main
+    path: k8s/helm/ids-api
+    helm:
+      releaseName: ids-api
+      valueFiles:
+        - values.yaml
+
+  # ─── Destination : cluster K8s ────────────
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: securedmlops
+
+  # ─── Politique de synchronisation ─────────
+  syncPolicy:
+    automated:
+      prune: true            # supprime les ressources retirées du Git
+      selfHeal: true         # restaure si modif manuelle dans le cluster
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+
+  # ─── Ne pas synchroniser certains champs gérés dynamiquement ───
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Rollout
+      jsonPointers:
+        - /spec/replicas
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /spec/minReplicas
+
+  # ─── Health checks ────────────────────────
+  revisionHistoryLimit: 10

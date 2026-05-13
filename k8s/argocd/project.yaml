@@ -1,0 +1,83 @@
+# ─────────────────────────────────────────
+#  ArgoCD AppProject
+#
+#  Isole le projet SecuredMLOps avec des
+#  restrictions explicites (DevSecOps) :
+#  - Whitelist du repo Git
+#  - Whitelist du namespace cible
+#  - Liste blanche des types de ressources autorisés
+# ─────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: securedmlops
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "Projet MLOps sécurisé — Détection d'Intrusions Réseau"
+
+  # ─── Sources Git autorisées ──────────────
+  sourceRepos:
+    - https://github.com/oussamaelmoussaoui/SecuredMLOps.git
+
+  # ─── Destinations autorisées ─────────────
+  destinations:
+    - namespace: securedmlops
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+
+  # ─── Ressources cluster-scope autorisées ──
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+
+  # ─── Ressources namespace-scope autorisées ──
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: Secret
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ServiceAccount
+    - group: apps
+      kind: Deployment
+    - group: argoproj.io
+      kind: Rollout
+    - group: argoproj.io
+      kind: AnalysisTemplate
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+    - group: networking.k8s.io
+      kind: Ingress
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: policy
+      kind: PodDisruptionBudget
+    - group: rbac.authorization.k8s.io
+      kind: Role
+    - group: rbac.authorization.k8s.io
+      kind: RoleBinding
+    - group: monitoring.coreos.com
+      kind: ServiceMonitor
+    - group: monitoring.coreos.com
+      kind: PrometheusRule
+
+  # ─── Roles pour les utilisateurs ─────────
+  roles:
+    - name: readonly
+      description: "Lecture seule pour les développeurs"
+      policies:
+        - p, proj:securedmlops:readonly, applications, get, securedmlops/*, allow
+      groups:
+        - securedmlops:developers
+
+    - name: admin
+      description: "Admin complet pour le MLOps Lead"
+      policies:
+        - p, proj:securedmlops:admin, applications, *, securedmlops/*, allow
+      groups:
+        - securedmlops:admins

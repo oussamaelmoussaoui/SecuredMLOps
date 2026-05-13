@@ -1,0 +1,118 @@
+{{- if eq .Values.deploymentStrategy "canary" }}
+# ─── Argo Rollouts — Canary Deployment ───
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ include "ids-api.fullname" . }}
+  labels:
+    {{- include "ids-api.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "ids-api.selectorLabels" . | nindent 6 }}
+  strategy:
+    canary:
+      canaryService: {{ include "ids-api.fullname" . }}-canary
+      stableService: {{ include "ids-api.fullname" . }}-stable
+      trafficRouting:
+        nginx:
+          stableIngress: {{ include "ids-api.fullname" . }}
+      {{- if .Values.canary.analysis.enabled }}
+      analysis:
+        templates:
+          - templateName: success-rate
+          - templateName: latency-p95
+        startingStep: 1
+        args:
+          - name: service-name
+            value: {{ include "ids-api.fullname" . }}-canary.{{ .Release.Namespace }}.svc.cluster.local
+      {{- end }}
+      steps:
+        {{- toYaml .Values.canary.steps | nindent 8 }}
+{{- else }}
+# ─── Deployment classique (rolling update) ───
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ids-api.fullname" . }}
+  labels:
+    {{- include "ids-api.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "ids-api.selectorLabels" . | nindent 6 }}
+{{- end }}
+
+  template:
+    metadata:
+      labels:
+        {{- include "ids-api.selectorLabels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ include "ids-api.fullname" . }}-sa
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.securityContext.pod | nindent 8 }}
+      containers:
+        - name: ids-api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          securityContext:
+            {{- toYaml .Values.securityContext.container | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "ids-api.fullname" . }}-config
+            - secretRef:
+                name: {{ include "ids-api.fullname" . }}-secrets
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /app/.cache
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 100Mi
+        - name: cache
+          emptyDir:
+            sizeLimit: 200Mi
+      terminationGracePeriodSeconds: 30

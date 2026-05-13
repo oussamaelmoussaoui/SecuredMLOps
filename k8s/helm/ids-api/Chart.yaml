@@ -1,0 +1,23 @@
+apiVersion: v2
+name: ids-api
+description: |
+  IDS API — Détection d'Intrusions Réseau (XGBoost / CICIDS2017)
+  Helm chart packagé pour le pipeline SecuredMLOps.
+  Inclut Argo Rollouts (Canary), HPA, NetworkPolicies et hardening DevSecOps.
+type: application
+version: 1.0.0          # Version du chart
+appVersion: "1.0.0"     # Version de l'app
+
+keywords:
+  - mlops
+  - security
+  - intrusion-detection
+  - xgboost
+  - canary
+
+maintainers:
+  - name: EL MOUSSAOUI Oussama
+    url: https://github.com/oussamaelmoussaoui
+
+annotations:
+  category: Security

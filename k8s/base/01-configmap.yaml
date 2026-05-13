@@ -1,0 +1,24 @@
+# ─────────────────────────────────────────
+#  ConfigMap — paramètres non sensibles de l'API IDS
+#  Chargé en variables d'environnement dans le pod
+# ─────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ids-api-config
+  namespace: securedmlops
+  labels:
+    app: ids-api
+data:
+  # Config API
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+  LOG_LEVEL: "INFO"
+
+  # MLflow — URI interne du cluster (service mlflow dans le même namespace)
+  MLFLOW_TRACKING_URI: "http://mlflow-service.securedmlops.svc.cluster.local:5000"
+
+  # Thresholds métier (alignés avec params.yaml)
+  LATENCY_THRESHOLD_MS: "100"
+  ATTACK_DETECTION_THRESHOLD: "0.70"
+  DRIFT_THRESHOLD: "0.15"
