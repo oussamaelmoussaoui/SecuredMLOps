@@ -1,0 +1,18 @@
+# ─────────────────────────────────────────
+#  PodDisruptionBudget
+#
+#  Garantit qu'au moins 2 pods restent disponibles
+#  pendant les maintenances de cluster (drain, upgrade).
+# ─────────────────────────────────────────
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ids-api-pdb
+  namespace: securedmlops
+  labels:
+    app: ids-api
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: ids-api

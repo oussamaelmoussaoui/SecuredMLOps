@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────
+#  values-dev.yaml — Dev local (Minikube)
+#  helm install ids-api . -f values-dev.yaml
+# ─────────────────────────────────────────
+
+replicaCount: 1
+deploymentStrategy: rolling   # canary désactivé en dev
+
+image:
+  pullPolicy: Never           # image locale Minikube
+  tag: "1.0.0-dev"
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+autoscaling:
+  enabled: false
+
+ingress:
+  host: ids-api.local
+  tls:
+    enabled: false            # pas de TLS en dev local
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+
+config:
+  logLevel: "DEBUG"
+
+pdb:
+  enabled: false
+
+monitoring:
+  serviceMonitor:
+    enabled: false

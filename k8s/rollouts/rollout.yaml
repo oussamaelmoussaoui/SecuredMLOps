@@ -1,0 +1,146 @@
+# ─────────────────────────────────────────
+#  Argo Rollouts — Canary Deployment
+#
+#  Stratégie progressive :
+#   - 10% du trafic → pause 2min + analyse
+#   - 25% du trafic → pause 2min + analyse
+#   - 50% du trafic → pause 5min + analyse
+#   - 75% du trafic → pause 2min
+#   - 100% du trafic
+#
+#  À chaque pause, on vérifie automatiquement :
+#   - Le taux d'erreur (success-rate)
+#   - La latence p95 (latency)
+#  → Rollback automatique si SLO non respecté.
+#
+#  ⚠️ Prérequis :
+#  kubectl create namespace argo-rollouts
+#  kubectl apply -n argo-rollouts -f \
+#    https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml
+# ─────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: ids-api-rollout
+  namespace: securedmlops
+  labels:
+    app: ids-api
+    app.kubernetes.io/part-of: securedmlops
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: ids-api
+
+  # ─── Stratégie Canary ────────────────────
+  strategy:
+    canary:
+      # Services nécessaires :
+      # - canaryService : pointe sur la nouvelle version
+      # - stableService : pointe sur la version stable
+      canaryService: ids-api-canary
+      stableService: ids-api-stable
+
+      # Trafic géré au niveau Ingress NGINX
+      trafficRouting:
+        nginx:
+          stableIngress: ids-api-ingress
+
+      # ─── AnalysisTemplate appliqué à chaque step ───
+      analysis:
+        templates:
+          - templateName: success-rate
+          - templateName: latency-p95
+        startingStep: 1   # commence après le 1er step (10%)
+        args:
+          - name: service-name
+            value: ids-api-canary.securedmlops.svc.cluster.local
+
+      steps:
+        # 1) 10% du trafic
+        - setWeight: 10
+        - pause: { duration: 2m }
+
+        # 2) 25%
+        - setWeight: 25
+        - pause: { duration: 2m }
+
+        # 3) 50% — pause plus longue pour confirmation
+        - setWeight: 50
+        - pause: { duration: 5m }
+
+        # 4) 75%
+        - setWeight: 75
+        - pause: { duration: 2m }
+
+        # 5) 100% — promotion finale automatique
+
+  # ─── Template Pod (identique au Deployment) ───
+  template:
+    metadata:
+      labels:
+        app: ids-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: ids-api-sa
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ids-api
+          image: ghcr.io/oussamaelmoussaoui/ids-api:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+          envFrom:
+            - configMapRef:
+                name: ids-api-config
+            - secretRef:
+                name: ids-api-secrets
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /app/.cache
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 100Mi }
+        - name: cache
+          emptyDir: { sizeLimit: 200Mi }
+      terminationGracePeriodSeconds: 30

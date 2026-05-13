@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ids-api.fullname" . }}-config
+  labels:
+    {{- include "ids-api.labels" . | nindent 4 }}
+data:
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  MLFLOW_TRACKING_URI: {{ .Values.config.mlflowTrackingUri | quote }}
+  LATENCY_THRESHOLD_MS: {{ .Values.config.latencyThresholdMs | quote }}
+  ATTACK_DETECTION_THRESHOLD: {{ .Values.config.attackDetectionThreshold | quote }}
+  DRIFT_THRESHOLD: {{ .Values.config.driftThreshold | quote }}

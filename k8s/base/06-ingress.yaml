@@ -1,0 +1,57 @@
+# ─────────────────────────────────────────
+#  Ingress — exposition externe HTTPS
+#
+#  Sécurité :
+#  - TLS obligatoire (cert-manager + Let's Encrypt en cloud)
+#  - Rate limiting (anti-bruteforce / DDoS basique)
+#  - Headers de sécurité (HSTS, X-Frame-Options, etc.)
+#  - WAF ModSecurity activable
+# ─────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ids-api-ingress
+  namespace: securedmlops
+  annotations:
+    # NGINX ingress controller
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # Rate limiting — 100 req/min par IP
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-rpm: "100"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+
+    # Headers de sécurité
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "Referrer-Policy: no-referrer";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains";
+
+    # Tailles max (anti-DoS)
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+
+    # cert-manager (à activer en cloud avec Let's Encrypt)
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+    # WAF ModSecurity (cloud production)
+    # nginx.ingress.kubernetes.io/enable-modsecurity: "true"
+    # nginx.ingress.kubernetes.io/enable-owasp-core-rules: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - ids-api.local
+      secretName: ids-api-tls
+  rules:
+    - host: ids-api.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ids-api-service
+                port:
+                  number: 80
