@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────
 #  ArgoCD Application — GitOps
-#  
+#     
 #  Principe : ArgoCD surveille le repo Git en
 #  permanence et synchronise automatiquement
 #  l'état du cluster avec le code.
