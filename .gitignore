@@ -37,3 +37,8 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Monitoring — generated reports and large generated data files
+monitoring/reports/
+Model/data/reference.csv
+Model/data/current.csv

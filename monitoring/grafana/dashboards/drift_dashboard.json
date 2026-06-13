@@ -1,0 +1,500 @@
+{
+  "id": null,
+  "uid": "securedmlops-drift-v1",
+  "title": "SecuredMLOps — Model Drift Dashboard",
+  "tags": ["mlops", "drift", "monitoring", "ids"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 2,
+  "refresh": "1m",
+  "time": { "from": "now-1h", "to": "now" },
+
+  "panels": [
+
+    {
+      "id": 1,
+      "title": "Overall Data Drift Score",
+      "description": "Share of feature columns that have drifted. >0.15 requires investigation.",
+      "type": "gauge",
+      "gridPos": { "x": 0, "y": 0, "w": 5, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-securedmlops" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": null },
+              { "color": "yellow", "value": 0.10 },
+              { "color": "red",    "value": 0.30 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        { "expr": "data_drift_score", "legendFormat": "Drift Score", "refId": "A" }
+      ]
+    },
+
+    {
+      "id": 2,
+      "title": "Drifted Features",
+      "description": "Number of individual feature columns with statistically significant drift.",
+      "type": "stat",
+      "gridPos": { "x": 5, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-securedmlops" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": null },
+              { "color": "yellow", "value": 3 },
+              { "color": "red",    "value": 8 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        { "expr": "n_drifted_features", "legendFormat": "Drifted Features", "refId": "A" }
+      ]
+    },
+
+    {
+      "id": 3,
+      "title": "Dataset Drift Detected",
+      "description": "Binary alert: 1 = overall dataset drift confirmed, 0 = distribution is stable.",
+      "type": "stat",
+      "gridPos": { "x": 9, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-securedmlops" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "STABLE",  "color": "green" },
+                "1": { "text": "DRIFTED", "color": "red"   }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red",   "value": 1    }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        { "expr": "dataset_drift_detected", "legendFormat": "Drift Alert", "refId": "A" }
+      ]
+    },
+
+    {
+      "id": 4,
+      "title": "Prediction Drift Score",
+      "description": "Drift score of the Label/target column. >0.10 may indicate model degradation.",
+      "type": "stat",
+      "gridPos": { "x": 13, "y": 0, "w": 5, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-securedmlops" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": null },
+              { "color": "yellow", "value": 0.10 },
+              { "color": "red",    "value": 0.30 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        { "expr": "prediction_drift_score", "legendFormat": "Prediction Drift", "refId": "A" }
+      ]
+    },
+
+    {
+      "id": 10,
+      "title": "Ratio Attaque vs Bénin",
+      "description": "Proportion de trafic malveillant (Label=1) vs normal dans les données courantes.",
+      "type": "gauge",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-securedmlops" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": null },
+              { "color": "yellow", "value": 0.20 },
+              { "color": "red",    "value": 0.50 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        { "expr": "attack_ratio", "legendFormat": "Attack Ratio", "refId": "A" }
+      ]
+    },
+
+    {
+      "id": 11,
+      "title": "Samples — Attaque vs Bénin",
+      "description": "Nombre absolu de samples attaque et bénins dans les données courantes.",
+      "type": "stat",
+      "gridPos": { "x": 5, "y": 4, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-securedmlops" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Attack" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Benign" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        { "expr": "n_attack_samples", "legendFormat": "Attack", "refId": "A" },
+        { "expr": "n_benign_samples", "legendFormat": "Benign", "refId": "B" }
+      ]
+    },
+
+    {
+      "id": 12,
+      "title": "Total Samples Traités",
+      "description": "Nombre total de samples dans les données courantes.",
+      "type": "stat",
+      "gridPos": { "x": 9, "y": 4, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-securedmlops" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        { "expr": "n_total_samples", "legendFormat": "Total Samples", "refId": "A" }
+      ]
+    },
+
+    {
+      "id": 13,
+      "title": "Dernier Calcul Drift",
+      "description": "Timestamp du dernier calcul Evidently réussi.",
+      "type": "stat",
+      "gridPos": { "x": 13, "y": 4, "w": 5, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-securedmlops" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeAsLocal",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        { "expr": "last_drift_compute_timestamp * 1000", "legendFormat": "Last Compute", "refId": "A" }
+      ]
+    },
+
+    {
+      "id": 5,
+      "title": "Prediction & Data Drift Over Time",
+      "description": "Trend of overall data drift and prediction drift. Use this to detect gradual model degradation.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-securedmlops" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "auto"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": null },
+              { "color": "yellow", "value": 0.10 },
+              { "color": "red",    "value": 0.30 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend":  { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        { "expr": "data_drift_score",      "legendFormat": "Overall Data Drift",  "refId": "A" },
+        { "expr": "prediction_drift_score","legendFormat": "Prediction Drift",     "refId": "B" },
+        { "expr": "attack_ratio",          "legendFormat": "Attack Ratio",         "refId": "C" }
+      ]
+    },
+
+    {
+      "id": 6,
+      "title": "Top 10 Features les Plus Driftées",
+      "description": "Les 10 features avec le drift le plus élevé. Rouge > 0.30.",
+      "type": "bargauge",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-securedmlops" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": null },
+              { "color": "yellow", "value": 0.10 },
+              { "color": "red",    "value": 0.30 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "expr": "topk(10, feature_drift_score)",
+          "legendFormat": "{{feature}}",
+          "refId": "A",
+          "instant": true
+        }
+      ]
+    },
+
+    {
+      "id": 20,
+      "title": "Statistiques Features Réseau — Moyenne",
+      "description": "Valeur moyenne des features réseau clés dans les données courantes vs référence.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 17, "w": 12, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-securedmlops" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "spanNulls": false,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend":  { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        { "expr": "feature_mean{feature=\"Flow Bytes/s\"}",        "legendFormat": "Flow Bytes/s",        "refId": "A" },
+        { "expr": "feature_mean{feature=\"Flow Packets/s\"}",      "legendFormat": "Flow Packets/s",      "refId": "B" },
+        { "expr": "feature_mean{feature=\"Packet Length Mean\"}",  "legendFormat": "Packet Length Mean",  "refId": "C" },
+        { "expr": "feature_mean{feature=\"Flow Duration\"}",       "legendFormat": "Flow Duration",       "refId": "D" }
+      ]
+    },
+
+    {
+      "id": 21,
+      "title": "Statistiques Features Réseau — Écart-Type",
+      "description": "Écart-type des features réseau clés. Une augmentation indique plus de variabilité dans le trafic.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 17, "w": 12, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-securedmlops" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "spanNulls": false,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend":  { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        { "expr": "feature_std{feature=\"Flow Bytes/s\"}",        "legendFormat": "Flow Bytes/s σ",       "refId": "A" },
+        { "expr": "feature_std{feature=\"Flow Packets/s\"}",      "legendFormat": "Flow Packets/s σ",     "refId": "B" },
+        { "expr": "feature_std{feature=\"Packet Length Mean\"}",  "legendFormat": "Packet Length Mean σ", "refId": "C" },
+        { "expr": "feature_std{feature=\"Packet Length Std\"}",   "legendFormat": "Packet Length Std σ",  "refId": "D" }
+      ]
+    },
+
+    {
+      "id": 22,
+      "title": "Init Window Bytes (Forward vs Backward)",
+      "description": "Taille initiale des fenêtres TCP dans les deux sens — indicateur clé d'attaques SYN/DoS.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 26, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-securedmlops" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 2, "fillOpacity": 8 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend":  { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        { "expr": "feature_mean{feature=\"Init_Win_bytes_forward\"}",  "legendFormat": "Init Win Forward (mean)",  "refId": "A" },
+        { "expr": "feature_mean{feature=\"Init_Win_bytes_backward\"}", "legendFormat": "Init Win Backward (mean)", "refId": "B" }
+      ]
+    },
+
+    {
+      "id": 23,
+      "title": "Tous les Drift Features (vue complète)",
+      "description": "Drift score de toutes les 77 features. Utilisez le scroll horizontal pour voir toutes les barres.",
+      "type": "bargauge",
+      "gridPos": { "x": 12, "y": 26, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-securedmlops" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": null },
+              { "color": "yellow", "value": 0.10 },
+              { "color": "red",    "value": 0.30 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "expr": "feature_drift_score",
+          "legendFormat": "{{feature}}",
+          "refId": "A",
+          "instant": true
+        }
+      ]
+    }
+
+  ],
+
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  }
+}

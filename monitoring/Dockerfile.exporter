@@ -1,0 +1,12 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+COPY requirements-exporter.txt .
+RUN pip install --no-cache-dir -r requirements-exporter.txt
+
+COPY evidently/ .
+
+EXPOSE 8001
+
+CMD ["python", "drift_metrics_exporter.py"]
