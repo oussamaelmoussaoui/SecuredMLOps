@@ -730,11 +730,6 @@ kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx
 
 ---
 
-## 👥 Équipe
-
-| Membre | Rôle | GitHub |
-|--------|------|--------|
-| EL MOUSSAOUI Oussama | ML Pipeline & MLOps Lead | [@oelmoussawi](https://github.com/oelmoussawi) |
 
 **Liens du projet :**
 - 🐙 GitHub : [oussamaelmoussaoui/SecuredMLOps](https://github.com/oussamaelmoussaoui/SecuredMLOps)
