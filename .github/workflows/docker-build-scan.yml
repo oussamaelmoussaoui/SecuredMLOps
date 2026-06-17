@@ -18,6 +18,7 @@ permissions:
   contents: read
   security-events: write
   actions: read
+  packages: write
 
 jobs:
 
@@ -36,6 +37,7 @@ jobs:
           SHORT_SHA=$(git rev-parse --short HEAD)
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
           echo "image=${{ secrets.DOCKERHUB_USERNAME }}/ids-api" >> "$GITHUB_OUTPUT"
+          echo "ghcr_image=ghcr.io/oussamaelmoussaoui/ids-api" >> "$GITHUB_OUTPUT"
           echo "sha_tag=sha-$SHORT_SHA" >> "$GITHUB_OUTPUT"
 
       - name: "Setup Python 3.10 pour DVC"
@@ -82,6 +84,13 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: "Login GHCR"
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: "Setup Docker BuildKit"
         uses: docker/setup-buildx-action@v3
 
@@ -95,6 +104,8 @@ jobs:
           tags: |
             ${{ steps.vars.outputs.image }}:latest
             ${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.sha_tag }}
+            ${{ steps.vars.outputs.ghcr_image }}:latest
+            ${{ steps.vars.outputs.ghcr_image }}:${{ steps.vars.outputs.sha_tag }}
           labels: |
             org.opencontainers.image.title=SecuredMLOps IDS API
             org.opencontainers.image.revision=${{ github.sha }}
@@ -134,17 +145,22 @@ jobs:
           path: trivy-results.sarif
           retention-days: 30
 
-      - name: "Push image Docker validée"
+      - name: "Push images — Docker Hub + GHCR"
         run: |
           docker push "${{ steps.vars.outputs.image }}:latest"
           docker push "${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.sha_tag }}"
+          docker push "${{ steps.vars.outputs.ghcr_image }}:latest"
+          docker push "${{ steps.vars.outputs.ghcr_image }}:${{ steps.vars.outputs.sha_tag }}"
 
       - name: "Résumé Docker"
         run: |
           echo "════════════════════════════════════"
-          echo " IMAGE DOCKER VALIDÉE ET PUSHÉE"
+          echo " IMAGES VALIDÉES ET PUSHÉES"
           echo "════════════════════════════════════"
-          echo "Image latest : ${{ steps.vars.outputs.image }}:latest"
-          echo "Image SHA    : ${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.sha_tag }}"
-          echo "Commit       : ${{ github.sha }}"
+          echo "Docker Hub : ${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.sha_tag }}"
+          echo "GHCR       : ${{ steps.vars.outputs.ghcr_image }}:${{ steps.vars.outputs.sha_tag }}"
+          echo "Commit     : ${{ github.sha }}"
           echo "════════════════════════════════════"
+          echo ""
+          echo "Tag à utiliser pour deploy-production :"
+          echo "${{ steps.vars.outputs.sha_tag }}"

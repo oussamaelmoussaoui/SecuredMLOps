@@ -1,7 +1,12 @@
 # ─────────────────────────────────────────────────────────────
 # .github/workflows/deploy-production.yml
-# Workflow 5 — Déploiement Production Contrôlé
+# Workflow 5 — Déploiement Production via GitOps (ArgoCD)
 # Pipeline: commit → ci.yml → training.yml → docker-build-scan.yml → deploy-staging.yml → deploy-production.yml (manuel)
+#
+# Principe GitOps :
+#   Ce workflow met à jour le tag d'image dans k8s/helm/ids-api/values.yaml
+#   puis pousse le commit → ArgoCD détecte le changement et synchronise
+#   automatiquement le cluster Kubernetes (Minikube ou cloud).
 # ─────────────────────────────────────────────────────────────
 
 name: "Deploy Production"
@@ -10,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Tag immuable de l'image Docker à déployer. Exemple : sha-a1b2c3d"
+        description: "Tag immuable de l'image à déployer (ex: sha-a1b2c3d). Visible dans le résumé du workflow Docker Build."
         required: true
         default: "sha-a1b2c3d"
       confirm_deploy:
@@ -23,7 +28,7 @@ on:
         default: "NON"
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 jobs:
@@ -47,143 +52,92 @@ jobs:
             exit 1
           fi
 
+          if [ "${{ github.event.inputs.image_tag }}" = "sha-a1b2c3d" ]; then
+            echo "Le tag par défaut sha-a1b2c3d est un exemple, pas une vraie image."
+            echo "Copiez le tag réel depuis le résumé du workflow Docker Build."
+            exit 1
+          fi
+
           echo "Confirmation reçue."
-          echo "Image à déployer : ${{ github.event.inputs.image_tag }}"
+          echo "Tag à déployer : ${{ github.event.inputs.image_tag }}"
 
 
-  deploy-production:
-    name: "Déploiement Production"
+  deploy-gitops:
+    name: "GitOps — Mise à jour ArgoCD"
     runs-on: ubuntu-latest
     needs: verify-confirmation
 
     environment:
       name: production
-      url: http://localhost:8000
 
     steps:
       - name: "Checkout du code"
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
 
       - name: "Informations déploiement"
         run: |
           echo "════════════════════════════════════"
-          echo " DÉPLOIEMENT PRODUCTION"
+          echo " DÉPLOIEMENT PRODUCTION — GitOps"
           echo "════════════════════════════════════"
-          echo "Image        : ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.event.inputs.image_tag }}"
+          echo "Image GHCR   : ghcr.io/oussamaelmoussaoui/ids-api:${{ github.event.inputs.image_tag }}"
           echo "Commit Git   : ${{ github.sha }}"
           echo "Déclenché par: ${{ github.actor }}"
-          echo "Date         : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "Date UTC     : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           echo "════════════════════════════════════"
 
-      - name: "Login Docker Hub"
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: "Pull image production"
+      - name: "Mise à jour du tag image dans Helm values"
         run: |
-          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.event.inputs.image_tag }}"
-          docker pull "$IMAGE"
+          TAG="${{ github.event.inputs.image_tag }}"
 
-      - name: "Déploiement nouvelle version"
+          echo "Mise à jour de k8s/helm/ids-api/values.yaml..."
+          echo "  Ancien tag : $(grep 'tag:' k8s/helm/ids-api/values.yaml | head -1 | xargs)"
+          echo "  Nouveau tag: $TAG"
+
+          sed -i "s|^  tag:.*|  tag: \"$TAG\"|" k8s/helm/ids-api/values.yaml
+
+          echo "Vérification :"
+          grep 'tag:' k8s/helm/ids-api/values.yaml | head -3
+
+      - name: "Commit et push du nouveau tag"
         run: |
-          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.event.inputs.image_tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          docker stop ids-api-production 2>/dev/null || true
-          docker rm ids-api-production 2>/dev/null || true
+          git add k8s/helm/ids-api/values.yaml
 
-          docker run -d \
-            --name ids-api-production \
-            -p 8000:8000 \
-            --restart always \
-            --label "environment=production" \
-            --label "deployed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --label "image_tag=${{ github.event.inputs.image_tag }}" \
-            --label "commit=${{ github.sha }}" \
-            "$IMAGE"
-
-          echo "Nouvelle version démarrée."
-
-      - name: "Smoke Tests Production"
-        run: |
-          set -e
-
-          echo "Attente démarrage API production..."
-          for i in 1 2 3 4 5 6; do
-            HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health || echo "000")
-            echo "Tentative $i/6 — HTTP $HEALTH"
-
-            if [ "$HEALTH" = "200" ]; then
-              break
-            fi
-
-            sleep 10
-          done
-
-          if [ "$HEALTH" != "200" ]; then
-            echo "Health check échoué."
-            docker logs ids-api-production || true
-            docker stop ids-api-production || true
-            exit 1
+          if git diff --cached --quiet; then
+            echo "Aucun changement détecté (même tag déjà déployé)."
+            exit 0
           fi
 
-          echo "Test /health"
-          curl -s -f http://localhost:8000/health > health.json
-          cat health.json
+          git commit -m "deploy(production): update ids-api image to ${{ github.event.inputs.image_tag }}
 
-          echo ""
-          echo "Test /model/info"
-          curl -s -f http://localhost:8000/model/info > model_info.json
-          cat model_info.json
+Déployé par : ${{ github.actor }}
+Date UTC    : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-          echo ""
-          echo "Test latence /health"
-          TIME=$(curl -s -o /dev/null -w "%{time_total}" http://localhost:8000/health)
-          echo "Latence health : ${TIME}s"
+          git push origin main
 
-          python - <<PY
-          time_value = float("${TIME}")
-          if time_value > 0.5:
-              raise SystemExit(f"Latence trop élevée : {time_value}s > 0.5s")
-          print("Latence valide")
-          PY
+          echo "Commit poussé — ArgoCD va synchroniser automatiquement."
 
-          echo "Production opérationnelle."
-
-      - name: "Enregistrer résumé déploiement"
-        run: |
-          mkdir -p deployment-summary
-
-          cat > deployment-summary/production-deployment.txt <<EOF
-          Déploiement production SecuredMLOps
-          Image: ${{ secrets.DOCKERHUB_USERNAME }}/ids-api:${{ github.event.inputs.image_tag }}
-          Commit: ${{ github.sha }}
-          Déployé par: ${{ github.actor }}
-          Date UTC: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-          EOF
-
-          cat deployment-summary/production-deployment.txt
-
-      - name: "Upload résumé déploiement"
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: production-deployment-summary
-          path: deployment-summary/
-          retention-days: 30
-
-      - name: "Logs Docker si échec"
-        if: failure()
-        run: docker logs ids-api-production || true
-
-      - name: "Résumé final"
-        if: success()
+      - name: "Résumé GitOps"
         run: |
           echo "════════════════════════════════════"
-          echo " DÉPLOIEMENT PRODUCTION RÉUSSI"
+          echo " GITOPS DÉCLENCHÉ"
           echo "════════════════════════════════════"
-          echo "Image : ids-api:${{ github.event.inputs.image_tag }}"
-          echo "Par   : ${{ github.actor }}"
-          echo "Date  : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "Tag déployé  : ${{ github.event.inputs.image_tag }}"
+          echo "Par          : ${{ github.actor }}"
+          echo "Date UTC     : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo ""
+          echo "ArgoCD synchronise automatiquement dans quelques secondes."
+          echo ""
+          echo "Pour surveiller le déploiement :"
+          echo "  kubectl port-forward svc/argocd-server -n argocd 8080:443"
+          echo "  → https://localhost:8080"
+          echo ""
+          echo "Pour accéder à l'API après sync :"
+          echo "  kubectl port-forward svc/ids-api-service -n securedmlops 8000:80"
+          echo "  → http://localhost:8000/health"
           echo "════════════════════════════════════"
