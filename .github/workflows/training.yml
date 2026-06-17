@@ -172,9 +172,9 @@ jobs:
 
           printf "\n# DVC trained model\n" >> .gitignore
           printf "Model/models/saved/xgboost_ids.joblib\n" >> .gitignore
-          printf "!xgboost_ids_model.dvc\n" >> .gitignore
+          printf "!Model/models/saved/xgboost_ids.joblib.dvc\n" >> .gitignore
 
-          rm -f xgboost_ids_model.dvc
+          rm -f Model/models/saved/xgboost_ids.joblib.dvc
 
           echo "Préparation terminée"
 
@@ -187,10 +187,10 @@ jobs:
             exit 1
           fi
 
-          dvc add --file xgboost_ids_model.dvc Model/models/saved/xgboost_ids.joblib
+          dvc add Model/models/saved/xgboost_ids.joblib
 
-          if [ ! -f "xgboost_ids_model.dvc" ]; then
-            echo "Erreur : xgboost_ids_model.dvc n'a pas été créé"
+          if [ ! -f "Model/models/saved/xgboost_ids.joblib.dvc" ]; then
+            echo "Erreur : xgboost_ids.joblib.dvc n'a pas été créé"
             find . -name "*.dvc" -type f || true
             exit 1
           fi
@@ -199,7 +199,7 @@ jobs:
           dvc push -r dagshub
 
           echo "Modèle versionné avec DVC"
-          ls -lh xgboost_ids_model.dvc
+          ls -lh Model/models/saved/xgboost_ids.joblib.dvc
           ls -lh Model/models/saved/
 
       - name: "Commit du pointeur DVC"
@@ -209,7 +209,7 @@ jobs:
 
           echo "Ajout du pointeur DVC à Git..."
           git add -f .gitignore
-          git add -f xgboost_ids_model.dvc
+          git add -f Model/models/saved/xgboost_ids.joblib.dvc
 
           echo "État Git après ajout :"
           git status --short
