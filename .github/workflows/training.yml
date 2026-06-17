@@ -182,18 +182,6 @@ jobs:
           echo ".gitignore préparé"
           cat Model/models/saved/.gitignore
 
-      - name: "Versionner le modèle avec DVC"
-        run: |
-          echo "Ajout du modèle dans DVC..."
-
-          dvc add Model/models/saved/xgboost_ids.joblib
-
-          echo "Push du modèle vers DagsHub..."
-          dvc push -r dagshub
-
-          echo "Modèle versionné avec DVC"
-          ls -lh Model/models/saved/
-
       - name: "Commit du pointeur DVC"
         run: |
           git config user.name "github-actions[bot]"
@@ -205,6 +193,11 @@ jobs:
             echo "Aucun changement DVC à committer"
           else
             git commit -m "version trained model with DVC"
+
+            echo "Nettoyage des fichiers générés non suivis..."
+            git reset --hard HEAD
+            git clean -fd
+
             git pull --rebase origin main
             git push origin HEAD:main
           fi
