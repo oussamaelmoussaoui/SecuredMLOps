@@ -57,3 +57,4 @@ thresholds:
   false_positive_rate: 0.05     # FPR max acceptable (5%)
   attack_detection_rate: 0.70   # Recall min sur les attaques
   drift_threshold: 0.15         # Seuil d'alerte data drift
+ 
