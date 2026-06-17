@@ -1,6 +1,7 @@
 # ─────────────────────────────────────────────────────────────
 # .github/workflows/rollback.yml
 # Workflow 6 — Rollback Manuel d'Urgence
+# Pipeline: rollback.yml est indépendant — déclenché manuellement en urgence (workflow_dispatch uniquement)
 # ─────────────────────────────────────────────────────────────
 
 name: "Rollback — Retour Arrière d'Urgence"

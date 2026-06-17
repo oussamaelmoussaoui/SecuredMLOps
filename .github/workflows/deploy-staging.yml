@@ -1,6 +1,7 @@
 # ─────────────────────────────────────────────────────────────
 # .github/workflows/deploy-staging.yml
 # Workflow 4 — Déploiement Staging Éphémère + Tests Dynamiques
+# Pipeline: commit → ci.yml → training.yml → docker-build-scan.yml → deploy-staging.yml → deploy-production.yml (manuel)
 # ─────────────────────────────────────────────────────────────
 
 name: "Deploy Staging + OWASP ZAP"

@@ -1,6 +1,15 @@
+# Pipeline: commit → ci.yml → training.yml → docker-build-scan.yml → deploy-staging.yml → deploy-production.yml (manuel)
+
 name: "Training — Entraînement ML"
 
 on:
+  # Déclenché automatiquement après le succès de CI
+  workflow_run:
+    workflows: ["CI — Tests & Sécurité Code"]
+    types: [completed]
+    branches: [main]
+
+  # Déclenchement manuel (preprocessing, expérience ad-hoc)
   workflow_dispatch:
     inputs:
       run_preprocessing:
@@ -17,22 +26,16 @@ on:
         required: false
         default: "IDS_CICIDS2017"
 
-  push:
-    branches:
-      - main
-    paths:
-      - "Model/src/models/**"
-      - "params.yaml"
-      - ".github/workflows/training.yml"
-
 permissions:
   contents: write
+  actions: read
 
 jobs:
 
   prepare-data:
     name: "Préparation des données"
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
 
     steps:
       - name: "Checkout du code"

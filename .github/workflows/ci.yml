@@ -1,6 +1,7 @@
 # ─────────────────────────────────────────────────────────────
 # .github/workflows/ci.yml
 # Workflow 1 — Intégration Continue + Sécurité Code
+# Pipeline: commit → ci.yml → training.yml → docker-build-scan.yml → deploy-staging.yml → deploy-production.yml (manuel)
 # ─────────────────────────────────────────────────────────────
  
 name: "CI — Tests & Sécurité Code"

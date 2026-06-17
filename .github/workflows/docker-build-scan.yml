@@ -1,13 +1,15 @@
 # ─────────────────────────────────────────────────────────────
 # .github/workflows/docker-build-scan.yml
 # Workflow 3 — Build Docker + Scan Sécurité Container
+# Pipeline: commit → ci.yml → training.yml → docker-build-scan.yml → deploy-staging.yml → deploy-production.yml (manuel)
 # ─────────────────────────────────────────────────────────────
 
 name: "Docker — Build & Scan Sécurité"
 
 on:
+  # Déclenché après le succès de Training (et non directement après CI)
   workflow_run:
-    workflows: ["CI — Tests & Sécurité Code"]
+    workflows: ["Training — Entraînement ML"]
     types: [completed]
     branches: [main]
   workflow_dispatch:

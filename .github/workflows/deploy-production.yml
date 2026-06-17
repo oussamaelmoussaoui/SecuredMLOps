@@ -1,6 +1,7 @@
 # ─────────────────────────────────────────────────────────────
 # .github/workflows/deploy-production.yml
 # Workflow 5 — Déploiement Production Contrôlé
+# Pipeline: commit → ci.yml → training.yml → docker-build-scan.yml → deploy-staging.yml → deploy-production.yml (manuel)
 # ─────────────────────────────────────────────────────────────
 
 name: "Deploy Production"
