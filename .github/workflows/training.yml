@@ -160,44 +160,66 @@ jobs:
           echo "Modèle généré avec succès"
           ls -lh Model/models/saved/
 
-      - name: "Préparer gitignore pour DVC modèle"
+      - name: "Préparer le versioning DVC du modèle"
         run: |
-          echo "Préparation .gitignore pour DVC..."
+          echo "Préparation du versioning DVC du modèle..."
 
           mkdir -p Model/models/saved
           touch .gitignore
 
-          printf "\n# DVC model versioning\n" >> .gitignore
-          printf "!Model/\n" >> .gitignore
-          printf "!Model/models/\n" >> .gitignore
-          printf "!Model/models/saved/\n" >> .gitignore
+          printf "\n# DVC trained model\n" >> .gitignore
           printf "Model/models/saved/xgboost_ids.joblib\n" >> .gitignore
-          printf "!Model/models/saved/xgboost_ids.joblib.dvc\n" >> .gitignore
-          printf "!Model/models/saved/.gitignore\n" >> .gitignore
+          printf "!xgboost_ids_model.dvc\n" >> .gitignore
 
-          printf "*\n" > Model/models/saved/.gitignore
-          printf "!*.dvc\n" >> Model/models/saved/.gitignore
-          printf "!.gitignore\n" >> Model/models/saved/.gitignore
+          rm -f xgboost_ids_model.dvc
 
-          echo ".gitignore préparé"
-          cat Model/models/saved/.gitignore
+          echo "Préparation terminée"
+
+      - name: "Versionner le modèle avec DVC"
+        run: |
+          echo "Ajout du modèle dans DVC..."
+
+          if [ ! -f "Model/models/saved/xgboost_ids.joblib" ]; then
+            echo "Modèle introuvable : Model/models/saved/xgboost_ids.joblib"
+            exit 1
+          fi
+
+          dvc add --file xgboost_ids_model.dvc Model/models/saved/xgboost_ids.joblib
+
+          if [ ! -f "xgboost_ids_model.dvc" ]; then
+            echo "Erreur : xgboost_ids_model.dvc n'a pas été créé"
+            find . -name "*.dvc" -type f || true
+            exit 1
+          fi
+
+          echo "Push du modèle vers DagsHub..."
+          dvc push -r dagshub
+
+          echo "Modèle versionné avec DVC"
+          ls -lh xgboost_ids_model.dvc
+          ls -lh Model/models/saved/
 
       - name: "Commit du pointeur DVC"
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add -f .gitignore Model/models/saved/.gitignore Model/models/saved/xgboost_ids.joblib.dvc
+          echo "Ajout du pointeur DVC à Git..."
+          git add -f .gitignore
+          git add -f xgboost_ids_model.dvc
+
+          echo "État Git après ajout :"
+          git status --short
 
           if git diff --cached --quiet; then
             echo "Aucun changement DVC à committer"
           else
             git commit -m "version trained model with DVC"
-
-            echo "Nettoyage des fichiers générés non suivis..."
-            git reset --hard HEAD
-            git clean -fd
-
-            git pull --rebase origin main
-            git push origin HEAD:main
           fi
+
+          echo "Nettoyage avant push..."
+          git reset --hard HEAD
+          git clean -fd
+
+          echo "Push vers GitHub..."
+          git push origin HEAD:main
