@@ -166,16 +166,8 @@ jobs:
       - name: "Préparer le versioning DVC du modèle"
         run: |
           echo "Préparation du versioning DVC du modèle..."
-
           mkdir -p Model/models/saved
-          touch .gitignore
-
-          printf "\n# DVC trained model\n" >> .gitignore
-          printf "Model/models/saved/xgboost_ids.joblib\n" >> .gitignore
-          printf "!Model/models/saved/xgboost_ids.joblib.dvc\n" >> .gitignore
-
           rm -f Model/models/saved/xgboost_ids.joblib.dvc
-
           echo "Préparation terminée"
 
       - name: "Versionner le modèle avec DVC"
@@ -208,7 +200,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           echo "Ajout du pointeur DVC à Git..."
-          git add -f .gitignore
           git add -f Model/models/saved/xgboost_ids.joblib.dvc
 
           echo "État Git après ajout :"

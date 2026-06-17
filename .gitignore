@@ -12,8 +12,9 @@ Model/data/raw/
 Model/data/processed/
 Model/data/*.html
 
-# Modèles sauvegardés — trop lourds pour GitHub
-Model/models/saved/
+# Modèles sauvegardés — trop lourds pour GitHub (pointeurs .dvc suivis par git)
+Model/models/saved/*
+!Model/models/saved/*.dvc
 
 # MLflow
 mlruns/
