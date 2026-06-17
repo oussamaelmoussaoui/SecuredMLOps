@@ -56,15 +56,22 @@ jobs:
       - name: "Récupérer le modèle versionné"
         run: |
           echo "Récupération du modèle depuis DVC/DagsHub..."
-          dvc pull Model/models/saved/ || dvc pull || true
 
-          if [ ! -f "Model/models/saved/xgboost_ids.joblib" ]; then
-            echo "Modèle manquant : Model/models/saved/xgboost_ids.joblib"
-            echo "Lancez training.yml ou versionnez le modèle avec DVC avant de builder l'image."
+          if [ ! -f "Model/models/saved/xgboost_ids.joblib.dvc" ]; then
+            echo "Pointeur DVC manquant : Model/models/saved/xgboost_ids.joblib.dvc"
+            echo "Lancez d'abord le workflow Training pour versionner le modèle avec DVC."
             exit 1
           fi
 
-          echo "Modèle trouvé :"
+          dvc pull -r dagshub Model/models/saved/xgboost_ids.joblib.dvc
+
+          if [ ! -f "Model/models/saved/xgboost_ids.joblib" ]; then
+            echo "Modèle manquant : Model/models/saved/xgboost_ids.joblib"
+            echo "Le modèle n'a pas été récupéré depuis DVC/DagsHub."
+            exit 1
+          fi
+
+          echo "Modèle trouvé ✅"
           ls -lh Model/models/saved/
 
       - name: "Login Docker Hub"
@@ -80,7 +87,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          dockerfile: Dockerfile
+          file: Dockerfile
           push: false
           load: true
           tags: |
@@ -112,13 +119,13 @@ jobs:
 
       - name: "Upload résultats Trivy vers GitHub Security"
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
         with:
           sarif_file: "trivy-results.sarif"
 
       - name: "Upload rapport Trivy"
         uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
         with:
           name: trivy-security-report
           path: trivy-results.sarif
