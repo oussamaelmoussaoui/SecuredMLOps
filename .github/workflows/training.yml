@@ -24,6 +24,9 @@ on:
       - "Model/src/models/**"
       - "params.yaml"
 
+permissions:
+  contents: write
+
 jobs:
 
   prepare-data:
@@ -54,7 +57,7 @@ jobs:
 
       - name: "DVC Pull — Récupération données"
         run: |
-          dvc pull
+          dvc pull -r dagshub
 
       - name: "Vérification des données"
         run: |
@@ -83,13 +86,6 @@ jobs:
           python Model/src/data/preprocess.py
           python Model/src/data/balance.py
 
-      - name: "Upload données preprocessées"
-        uses: actions/upload-artifact@v4
-        with:
-          name: processed-data
-          path: Model/data/processed/
-          retention-days: 3
-
 
   train-evaluate:
     name: "Entraînement XGBoost + Évaluation"
@@ -113,11 +109,15 @@ jobs:
           pip install -r requirements.txt
           pip install mlflow
 
-      - name: "Download données preprocessées"
-        uses: actions/download-artifact@v4
-        with:
-          name: processed-data
-          path: Model/data/processed/
+      - name: "Configuration DVC — DagsHub"
+        run: |
+          dvc remote modify dagshub --local auth basic
+          dvc remote modify dagshub --local user "${{ secrets.DAGSHUB_USERNAME }}"
+          dvc remote modify dagshub --local password "${{ secrets.DAGSHUB_TOKEN }}"
+
+      - name: "DVC Pull — Récupération données"
+        run: |
+          dvc pull -r dagshub
 
       - name: "Configuration MLflow local"
         run: |
@@ -202,17 +202,46 @@ jobs:
           print("Toutes les métriques valident les seuils")
           PY
 
-      - name: "Upload modèle entraîné"
-        uses: actions/upload-artifact@v4
-        with:
-          name: trained-model
-          path: Model/models/saved/
-          retention-days: 7
+      - name: "Vérification modèle généré"
+        run: |
+          if [ ! -f "Model/models/saved/xgboost_ids.joblib" ]; then
+            echo "Modèle absent après entraînement : Model/models/saved/xgboost_ids.joblib"
+            exit 1
+          fi
 
-      - name: "Upload rapports évaluation"
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: evaluation-reports
-          path: Model/docs/
-          retention-days: 30
+          echo "Modèle généré avec succès ✅"
+          ls -lh Model/models/saved/
+
+      - name: "Versionner le modèle avec DVC"
+        run: |
+          echo "Ajout du modèle dans DVC..."
+          dvc add Model/models/saved/xgboost_ids.joblib
+
+          echo "Push du modèle vers DagsHub..."
+          dvc push -r dagshub
+
+          echo "Modèle versionné avec DVC ✅"
+          ls -lh Model/models/saved/
+
+      - name: "Commit du pointeur DVC"
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add Model/models/saved/xgboost_ids.joblib.dvc
+
+          if [ -f "Model/models/saved/.gitignore" ]; then
+            git add Model/models/saved/.gitignore
+          fi
+
+          if [ -f ".gitignore" ]; then
+            git add .gitignore
+          fi
+
+          if git diff --cached --quiet; then
+            echo "Aucun changement DVC à committer"
+          else
+            git commit -m "version trained model with DVC"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
