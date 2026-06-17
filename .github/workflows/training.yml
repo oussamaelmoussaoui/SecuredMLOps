@@ -95,6 +95,8 @@ jobs:
     steps:
       - name: "Checkout du code"
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: "Setup Python 3.10"
         uses: actions/setup-python@v5
@@ -212,6 +214,35 @@ jobs:
           echo "Modèle généré avec succès ✅"
           ls -lh Model/models/saved/
 
+      - name: "Corriger .gitignore pour DVC modèle"
+        run: |
+          echo "Correction .gitignore pour autoriser le pointeur DVC du modèle..."
+
+          mkdir -p Model/models/saved
+          touch .gitignore
+          touch Model/models/saved/.gitignore
+
+          cat > Model/models/saved/.gitignore <<'EOF'
+*
+!*.dvc
+!.gitignore
+EOF
+
+          {
+            echo ""
+            echo "# DVC model pointers"
+            echo "!Model/"
+            echo "!Model/models/"
+            echo "!Model/models/saved/"
+            echo "!Model/models/saved/*.dvc"
+            echo "!Model/models/saved/.gitignore"
+          } >> .gitignore
+
+          echo "Vérification que le pointeur .dvc n'est plus ignoré..."
+          git check-ignore -v Model/models/saved/xgboost_ids.joblib.dvc && exit 1 || true
+
+          echo ".gitignore corrigé ✅"
+
       - name: "Versionner le modèle avec DVC"
         run: |
           echo "Ajout du modèle dans DVC..."
@@ -228,15 +259,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add Model/models/saved/xgboost_ids.joblib.dvc
-
-          if [ -f "Model/models/saved/.gitignore" ]; then
-            git add Model/models/saved/.gitignore
-          fi
-
-          if [ -f ".gitignore" ]; then
-            git add .gitignore
-          fi
+          git add -f .gitignore
+          git add -f Model/models/saved/.gitignore
+          git add -f Model/models/saved/xgboost_ids.joblib.dvc
 
           if git diff --cached --quiet; then
             echo "Aucun changement DVC à committer"
