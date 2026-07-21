@@ -1,4 +1,4 @@
-# 🔐 SecuredMLOps
+# SecuredMLOps
 
 <div align="center">
 
@@ -19,7 +19,7 @@
 
 ---
 
-## 📋 Table des Matières
+## Table des Matières
 
 - [À propos du projet](#-à-propos-du-projet)
 - [Architecture globale](#-architecture-globale)
@@ -37,7 +37,7 @@
 
 ---
 
-## 🎯 À propos du projet
+## À propos du projet
 
 **SecuredMLOps** est un pipeline MLOps complet et sécurisé qui intègre les pratiques **DevSecOps** à chaque étape du cycle de vie d'un modèle de Machine Learning, de la donnée brute jusqu'au monitoring en production.
 
@@ -92,12 +92,12 @@ CICIDS2017 (8 CSV, 843 MB)
 
 | Phase | Contenu | Statut |
 |-------|---------|--------|
-| Phase 1 — Setup | Environnement, DVC, MLflow, architecture | ✅ Terminé |
-| Phase 2 — Data | Ingestion, validation, versioning DVC | ✅ Terminé |
-| Phase 3 — ML | XGBoost, MLflow, SHAP, API FastAPI, Tests | ✅ Terminé |
-| Phase 4 — CI/CD + Sécurité | GitHub Actions, Bandit, Trivy, Vault | 🔄 En cours |
-| Phase 5 — Déploiement | Kubernetes, Canary, ArgoCD | ⬜ À venir |
-| Phase 6 — Monitoring | Grafana, Evidently drift | ⬜ À venir |
+| Phase 1 — Setup | Environnement, DVC, MLflow, architecture |
+| Phase 2 — Data | Ingestion, validation, versioning DVC | 
+| Phase 3 — ML | XGBoost, MLflow, SHAP, API FastAPI, Tests | 
+| Phase 4 — CI/CD + Sécurité | GitHub Actions, Bandit, Trivy, Vault |
+| Phase 5 — Déploiement | Kubernetes, Canary, ArgoCD ||
+| Phase 6 — Monitoring | Grafana, Evidently drift |
 
 ---
 
@@ -150,7 +150,7 @@ CICIDS2017 (8 CSV, 843 MB)
 
 ---
 
-## 📊 Résultats du Modèle ML
+## Résultats du Modèle ML
 
 Modèle XGBoost entraîné sur **2 682 036 flux réseau** du dataset CICIDS2017 :
 
@@ -166,7 +166,7 @@ Modèle XGBoost entraîné sur **2 682 036 flux réseau** du dataset CICIDS2017 
 
 ---
 
-## ⚙️ Prérequis
+## Prérequis
 
 | Outil | Version min | Lien |
 |-------|-------------|------|
@@ -182,7 +182,7 @@ Modèle XGBoost entraîné sur **2 682 036 flux réseau** du dataset CICIDS2017 
 
 ---
 
-## 🚀 Installation & Démarrage rapide
+## Installation & Démarrage rapide
 
 ### 1. Cloner le repo
 
@@ -232,7 +232,7 @@ Cette commande télécharge automatiquement :
 
 ---
 
-## 🤖 Pipeline ML — Phases 1 à 3
+## Pipeline ML — Phases 1 à 3
 
 > Les données étant déjà preprocessées via `dvc pull`, tu peux aller directement à l'**Étape 3**. Les étapes 1 et 2 sont optionnelles.
 
@@ -332,7 +332,7 @@ docker-compose down
 
 ---
 
-## 🔒 CI/CD & Sécurité — Phase 4
+## CI/CD & Sécurité — Phase 4
 
 Cette phase intègre la sécurité à **chaque étape** via GitHub Actions.
 
@@ -346,7 +346,7 @@ Cette phase intègre la sécurité à **chaque étape** via GitHub Actions.
 
 ---
 
-## 🚢 Déploiement Kubernetes — Phase 5
+## Déploiement Kubernetes — Phase 5
 
 ### Architecture Canary
 
@@ -385,7 +385,7 @@ Cette phase intègre la sécurité à **chaque étape** via GitHub Actions.
 **Flux Canary progressif :**
 ```
 10% → pause 2min → analyse Prometheus ─┐
-25% → pause 2min → analyse Prometheus ─┤  ❌ Échec → rollback auto
+25% → pause 2min → analyse Prometheus ─┤  Échec → rollback auto
 50% → pause 5min → analyse Prometheus ─┤
 75% → pause 2min → analyse Prometheus ─┘
 100% → version stable promue
@@ -586,7 +586,7 @@ docker-compose down
 
 ---
 
-## 📁 Structure du Projet
+## Structure du Projet
 
 ```
 SecuredMLOps/
@@ -645,7 +645,7 @@ SecuredMLOps/
 
 ---
 
-## ❓ Problèmes Fréquents
+## Problèmes Fréquents
 
 ### Pipeline ML
 
@@ -700,7 +700,7 @@ kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx
 
 ---
 
-## ✅ Critères de Validation
+## Critères de Validation
 
 ### Phase 3 — ML
 | Critère | Validation |
@@ -732,9 +732,9 @@ kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx
 
 
 **Liens du projet :**
-- 🐙 GitHub : [oussamaelmoussaoui/SecuredMLOps](https://github.com/oussamaelmoussaoui/SecuredMLOps)
-- 📊 DagsHub : [oussamaelmoussaoui/SecuredMLOps](https://dagshub.com/oussamaelmoussaoui/SecuredMLOps)
-- 📖 Dataset : [CICIDS2017 — University of New Brunswick](https://www.unb.ca/cic/datasets/ids-2017.html)
+- GitHub : [oussamaelmoussaoui/SecuredMLOps](https://github.com/oussamaelmoussaoui/SecuredMLOps)
+- DagsHub : [oussamaelmoussaoui/SecuredMLOps](https://dagshub.com/oussamaelmoussaoui/SecuredMLOps)
+- Dataset : [CICIDS2017 — University of New Brunswick](https://www.unb.ca/cic/datasets/ids-2017.html)
 
 ---
 
